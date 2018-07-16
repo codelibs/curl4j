@@ -15,8 +15,6 @@
  */
 package org.codelibs.curl;
 
-import java.net.HttpURLConnection;
-
 public class Curl {
 
     protected Curl() {
@@ -39,12 +37,20 @@ public class Curl {
         return new CurlRequest(Method.DELETE, url);
     }
 
-    public enum Method {
-        GET, POST, PUT, DELETE;
+    public static CurlRequest head(final String url) {
+        return new CurlRequest(Method.HEAD, url);
     }
 
-    public interface ResponseListener {
-        public void onResponse(HttpURLConnection con);
+    public static CurlRequest options(final String url) {
+        return new CurlRequest(Method.OPTIONS, url);
+    }
+
+    public static CurlRequest connect(final String url) {
+        return new CurlRequest(Method.CONNECT, url);
+    }
+
+    public enum Method {
+        GET, POST, PUT, DELETE, HEAD, OPTIONS, TRACE, CONNECT;
     }
 
 }

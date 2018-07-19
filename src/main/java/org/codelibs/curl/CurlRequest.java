@@ -241,8 +241,6 @@ public class CurlRequest {
                 final InputStream errorStream = con.getErrorStream();
                 if (errorStream != null) {
                     writeContent(() -> errorStream);
-                    // overwrite
-                    response.setContentException(e);
                 } else {
                     throw new CurlException("Failed to access the response.", e);
                 }
@@ -279,6 +277,7 @@ public class CurlRequest {
                 } catch (final Exception ignore) {
                     // ignore
                 }
+                throw new CurlException("Failed to write a response.", e);
             }
         }
     }

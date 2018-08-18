@@ -20,16 +20,15 @@ import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.function.Function;
+
+import org.codelibs.curl.io.ContentCache;
 
 public class CurlResponse implements Closeable {
 
     private int httpStatusCode;
 
-    private Path tempFile;
+    private ContentCache contentCache;
 
     private String encoding;
 
@@ -37,8 +36,8 @@ public class CurlResponse implements Closeable {
 
     @Override
     public void close() throws IOException {
-        if (tempFile != null) {
-            Files.delete(tempFile);
+        if (contentCache != null) {
+            contentCache.close();
         }
     }
 
@@ -64,18 +63,18 @@ public class CurlResponse implements Closeable {
     }
 
     public InputStream getContentAsStream() throws IOException {
-        if (tempFile == null) {
+        if (contentCache == null) {
             if (contentException != null) {
                 throw new CurlException("The content does not exist.", contentException);
             } else {
                 throw new CurlException("The content does not exist.");
             }
         }
-        return Files.newInputStream(tempFile, StandardOpenOption.READ);
+        return contentCache.getInputStream();
     }
 
-    public void setContentFile(final Path tempFile) {
-        this.tempFile = tempFile;
+    public void setContentCache(final ContentCache contentCache) {
+        this.contentCache = contentCache;
     }
 
     public int getHttpStatusCode() {

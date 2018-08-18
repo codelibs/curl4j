@@ -16,7 +16,6 @@
 package org.codelibs.curl;
 
 import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
 import java.io.BufferedWriter;
 import java.io.ByteArrayInputStream;
 import java.io.FileNotFoundException;
@@ -30,20 +29,27 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardOpenOption;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ForkJoinPool;
 import java.util.function.Consumer;
+import java.util.logging.Logger;
 
+import org.apache.commons.io.output.DeferredFileOutputStream;
 import org.codelibs.curl.Curl.Method;
+import org.codelibs.curl.io.ContentCache;
 
 public class CurlRequest {
+
+    protected static final Logger logger = Logger.getLogger(CurlRequest.class.getName());
+
     protected String url;
 
     protected Proxy proxy;
 
     protected String encoding = "UTF-8";
+
+    protected int threshold = 1024 * 1024; // 1m
 
     protected Method method;
 
@@ -70,6 +76,10 @@ public class CurlRequest {
         return encoding;
     }
 
+    public int threshold() {
+        return threshold;
+    }
+
     public Method method() {
         return method;
     }
@@ -88,6 +98,11 @@ public class CurlRequest {
             throw new CurlException("This method must be called before param method.");
         }
         this.encoding = encoding;
+        return this;
+    }
+
+    public CurlRequest threshold(final int threshold) {
+        this.threshold = threshold;
         return this;
     }
 
@@ -141,11 +156,13 @@ public class CurlRequest {
 
             HttpURLConnection connection = null;
             try {
+                logger.fine(() -> ">>> " + method + " " + url);
                 final URL u = new URL(url);
                 connection = (HttpURLConnection) (proxy != null ? u.openConnection(proxy) : u.openConnection());
                 connection.setRequestMethod(method.toString());
                 if (headerList != null) {
                     for (final String[] values : headerList) {
+                        logger.fine(() -> ">>> " + values[0] + "=" + values[1]);
                         connection.addRequestProperty(values[0], values[1]);
                     }
                 }
@@ -153,6 +170,7 @@ public class CurlRequest {
                     connectionBuilder.onConnect(this, connection);
                 } else {
                     if (body != null) {
+                        logger.fine(() -> ">>> " + body);
                         connection.setDoOutput(true);
                         try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(connection.getOutputStream(), encoding))) {
                             writer.write(body);
@@ -178,7 +196,7 @@ public class CurlRequest {
 
     public void execute(final Consumer<CurlResponse> actionListener, final Consumer<Exception> exceptionListener) {
         connect(con -> {
-            final RequestProcessor processor = new RequestProcessor(encoding);
+            final RequestProcessor processor = new RequestProcessor(encoding, threshold);
             processor.accept(con);
             actionListener.accept(processor.getResponse());
         }, exceptionListener);
@@ -186,7 +204,7 @@ public class CurlRequest {
 
     public CurlResponse execute() {
         this.threadPool = null;
-        final RequestProcessor processor = new RequestProcessor(encoding);
+        final RequestProcessor processor = new RequestProcessor(encoding, threshold);
         connect(processor, e -> {
             throw new CurlException("Failed to process a request.", e);
         });
@@ -219,8 +237,11 @@ public class CurlRequest {
 
         private final String encoding;
 
-        public RequestProcessor(final String encoding) {
+        private int threshold;
+
+        public RequestProcessor(final String encoding, final int threshold) {
             this.encoding = encoding;
+            this.threshold = threshold;
         }
 
         public CurlResponse getResponse() {
@@ -262,21 +283,24 @@ public class CurlRequest {
                 throw new CurlException("Failed to create a temporary file.", e);
             }
             try (BufferedInputStream bis = new BufferedInputStream(handler.open());
-                    BufferedOutputStream bos = new BufferedOutputStream(Files.newOutputStream(tempFile, StandardOpenOption.WRITE))) {
-                byte[] bytes = new byte[4096];
-                try {
-                    int length = bis.read(bytes);
-                    while (length != -1) {
-                        if (length != 0) {
-                            bos.write(bytes, 0, length);
-                        }
-                        length = bis.read(bytes);
+                    DeferredFileOutputStream dfos = new DeferredFileOutputStream(threshold, tempFile.toFile())) {
+                final byte[] bytes = new byte[4096];
+                int length = bis.read(bytes);
+                while (length != -1) {
+                    if (length != 0) {
+                        dfos.write(bytes, 0, length);
                     }
-                } finally {
-                    bytes = null;
+                    length = bis.read(bytes);
+                    logger.fine(() -> {
+                        try {
+                            return "<<< " + new String(bytes, encoding);
+                        } catch (UnsupportedEncodingException e) {
+                            return "<<< <" + e.getMessage() + ">";
+                        }
+                    });
                 }
-                bos.flush();
-                response.setContentFile(tempFile);
+                dfos.flush();
+                response.setContentCache(new ContentCache(dfos));
             } catch (final Exception e) {
                 response.setContentException(e);
                 try {

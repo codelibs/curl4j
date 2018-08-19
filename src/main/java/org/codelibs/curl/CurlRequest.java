@@ -18,7 +18,6 @@ package org.codelibs.curl;
 import java.io.BufferedInputStream;
 import java.io.BufferedWriter;
 import java.io.ByteArrayInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStreamWriter;
@@ -253,26 +252,18 @@ public class CurlRequest {
             try {
                 response.setEncoding(encoding);
                 response.setHttpStatusCode(con.getResponseCode());
-                writeContent(() -> {
-                    try {
-                        final InputStream in = con.getInputStream();
-                        if (in != null) {
-                            return in;
-                        }
-                    } catch (FileNotFoundException e) {
-                        // no content on error(ex. 404 of HEAD)
-                        return new ByteArrayInputStream(new byte[0]);
-                    }
-                    return con.getErrorStream();
-                });
             } catch (final Exception e) {
-                final InputStream errorStream = con.getErrorStream();
-                if (errorStream != null) {
-                    writeContent(() -> errorStream);
-                } else {
-                    throw new CurlException("Failed to access the response.", e);
-                }
+                throw new CurlException("Failed to access the response.", e);
             }
+            writeContent(() -> {
+                if (con.getResponseCode() < 400) {
+                    return con.getInputStream();
+                } else if ("head".equalsIgnoreCase(con.getRequestMethod())) {
+                    return new ByteArrayInputStream(new byte[0]);
+                } else {
+                    return con.getErrorStream();
+                }
+            });
         }
 
         private void writeContent(final InputStreamHandler handler) {

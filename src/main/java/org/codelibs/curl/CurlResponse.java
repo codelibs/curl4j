@@ -20,6 +20,10 @@ import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
 import java.util.function.Function;
 
 import org.codelibs.curl.io.ContentCache;
@@ -33,6 +37,8 @@ public class CurlResponse implements Closeable {
     private String encoding;
 
     private Exception contentException;
+
+    private Map<String, List<String>> headers;
 
     @Override
     public void close() throws IOException {
@@ -99,5 +105,34 @@ public class CurlResponse implements Closeable {
 
     public Exception getContentException() {
         return contentException;
+    }
+
+    public void setHeaders(final Map<String, List<String>> headers) {
+        if (headers != null) {
+            final Map<String, List<String>> map = new HashMap<>();
+            headers.entrySet().stream().filter(e -> e.getKey() != null)
+                    .forEach(e -> map.put(e.getKey().toLowerCase(Locale.ROOT), e.getValue()));
+            this.headers = map;
+        }
+    }
+
+    public Map<String, List<String>> getHeaders() {
+        return headers;
+    }
+
+    public String[] getHeaderValues(final String name) {
+        final List<String> list = headers.get(name.toLowerCase(Locale.ROOT));
+        if (list == null) {
+            return new String[0];
+        }
+        return list.toArray(new String[list.size()]);
+    }
+
+    public String getHeaderValue(final String name) {
+        final String[] values = getHeaderValues(name);
+        if (values.length == 0) {
+            return null;
+        }
+        return values[0];
     }
 }

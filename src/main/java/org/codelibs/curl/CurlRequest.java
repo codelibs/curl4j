@@ -252,6 +252,7 @@ public class CurlRequest {
             try {
                 response.setEncoding(encoding);
                 response.setHttpStatusCode(con.getResponseCode());
+                response.setHeaders(con.getHeaderFields());
             } catch (final Exception e) {
                 throw new CurlException("Failed to access the response.", e);
             }

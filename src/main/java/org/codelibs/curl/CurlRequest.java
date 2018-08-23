@@ -31,7 +31,9 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ForkJoinPool;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import java.util.logging.Logger;
 
 import org.apache.commons.io.output.DeferredFileOutputStream;
@@ -60,7 +62,7 @@ public class CurlRequest {
 
     protected ForkJoinPool threadPool;
 
-    private ConnectionBuilder connectionBuilder;
+    private BiConsumer<CurlRequest, HttpURLConnection> connectionBuilder;
 
     public CurlRequest(final Method method, final String url) {
         this.method = method;
@@ -110,7 +112,7 @@ public class CurlRequest {
         return this;
     }
 
-    public CurlRequest onConnect(final ConnectionBuilder connectionBuilder) {
+    public CurlRequest onConnect(final BiConsumer<CurlRequest, HttpURLConnection> connectionBuilder) {
         this.connectionBuilder = connectionBuilder;
         return this;
     }
@@ -165,18 +167,20 @@ public class CurlRequest {
                         connection.addRequestProperty(values[0], values[1]);
                     }
                 }
+
                 if (connectionBuilder != null) {
-                    connectionBuilder.onConnect(this, connection);
-                } else {
-                    if (body != null) {
-                        logger.fine(() -> ">>> " + body);
-                        connection.setDoOutput(true);
-                        try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(connection.getOutputStream(), encoding))) {
-                            writer.write(body);
-                            writer.flush();
-                        }
+                    connectionBuilder.accept(this, connection);
+                }
+
+                if (body != null) {
+                    logger.fine(() -> ">>> " + body);
+                    connection.setDoOutput(true);
+                    try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(connection.getOutputStream(), encoding))) {
+                        writer.write(body);
+                        writer.flush();
                     }
                 }
+
                 actionListener.accept(connection);
             } catch (final Exception e) {
                 exceptionListener.accept(new CurlException("Failed to access to " + url, e));
@@ -210,20 +214,12 @@ public class CurlRequest {
         return processor.getResponse();
     }
 
-    private interface InputStreamHandler {
-        InputStream open() throws IOException;
-    }
-
     protected String encode(final String value) {
         try {
             return URLEncoder.encode(value, encoding);
         } catch (final UnsupportedEncodingException e) {
             throw new CurlException("Invalid encoding: " + encoding, e);
         }
-    }
-
-    public static interface ConnectionBuilder {
-        void onConnect(CurlRequest curlRequest, HttpURLConnection connection);
     }
 
     public CurlRequest threadPool(final ForkJoinPool threadPool) {
@@ -257,24 +253,28 @@ public class CurlRequest {
                 throw new CurlException("Failed to access the response.", e);
             }
             writeContent(() -> {
-                if (con.getResponseCode() < 400) {
-                    return con.getInputStream();
-                } else if ("head".equalsIgnoreCase(con.getRequestMethod())) {
-                    return new ByteArrayInputStream(new byte[0]);
-                } else {
-                    return con.getErrorStream();
+                try {
+                    if (con.getResponseCode() < 400) {
+                        return con.getInputStream();
+                    } else if ("head".equalsIgnoreCase(con.getRequestMethod())) {
+                        return new ByteArrayInputStream(new byte[0]);
+                    } else {
+                        return con.getErrorStream();
+                    }
+                } catch (IOException e) {
+                    throw new CurlException("Failed to process a request.", e);
                 }
             });
         }
 
-        private void writeContent(final InputStreamHandler handler) {
+        private void writeContent(final Supplier<InputStream> handler) {
             final Path tempFile;
             try {
                 tempFile = Files.createTempFile("curl4j-", ".tmp");
             } catch (final IOException e) {
                 throw new CurlException("Failed to create a temporary file.", e);
             }
-            try (BufferedInputStream bis = new BufferedInputStream(handler.open());
+            try (BufferedInputStream bis = new BufferedInputStream(handler.get());
                     DeferredFileOutputStream dfos = new DeferredFileOutputStream(threshold, tempFile.toFile())) {
                 final byte[] bytes = new byte[4096];
                 int length = bis.read(bytes);

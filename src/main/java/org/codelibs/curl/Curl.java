@@ -15,7 +15,11 @@
  */
 package org.codelibs.curl;
 
+import java.io.File;
+
 public class Curl {
+
+    public static final File tmpDir = new File(System.getProperty("java.io.tmpdir"));
 
     protected Curl() {
         // nothing

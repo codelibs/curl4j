@@ -26,8 +26,6 @@ import java.net.HttpURLConnection;
 import java.net.Proxy;
 import java.net.URL;
 import java.net.URLEncoder;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ForkJoinPool;
@@ -268,14 +266,8 @@ public class CurlRequest {
         }
 
         private void writeContent(final Supplier<InputStream> handler) {
-            final Path tempFile;
-            try {
-                tempFile = Files.createTempFile("curl4j-", ".tmp");
-            } catch (final IOException e) {
-                throw new CurlException("Failed to create a temporary file.", e);
-            }
             try (BufferedInputStream bis = new BufferedInputStream(handler.get());
-                    DeferredFileOutputStream dfos = new DeferredFileOutputStream(threshold, tempFile.toFile())) {
+                    DeferredFileOutputStream dfos = new DeferredFileOutputStream(threshold, "curl4j-", ".tmp", Curl.tmpDir)) {
                 final byte[] bytes = new byte[4096];
                 int length = bis.read(bytes);
                 while (length != -1) {
@@ -292,14 +284,16 @@ public class CurlRequest {
                     });
                 }
                 dfos.flush();
-                response.setContentCache(new ContentCache(dfos));
+                final ContentCache contentCache;
+                logger.fine(() -> "Response in " + (dfos.isInMemory() ? "Memory" : "File"));
+                if (dfos.isInMemory()) {
+                    contentCache = new ContentCache(dfos.getData());
+                } else {
+                    contentCache = new ContentCache(dfos.getFile());
+                }
+                response.setContentCache(contentCache);
             } catch (final Exception e) {
                 response.setContentException(e);
-                try {
-                    Files.deleteIfExists(tempFile);
-                } catch (final Exception ignore) {
-                    // ignore
-                }
                 throw new CurlException("Failed to write a response.", e);
             }
         }

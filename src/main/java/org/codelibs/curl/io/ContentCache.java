@@ -24,8 +24,6 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.util.logging.Logger;
 
-import org.apache.commons.io.output.DeferredFileOutputStream;
-
 public class ContentCache implements Closeable {
 
     protected static final Logger logger = Logger.getLogger(ContentCache.class.getName());
@@ -34,15 +32,14 @@ public class ContentCache implements Closeable {
 
     private final File file;
 
-    public ContentCache(final DeferredFileOutputStream dfos) {
-        logger.fine(() -> "Response in " + (dfos.isInMemory() ? "Memory" : "File"));
-        if (dfos.isInMemory()) {
-            data = dfos.getData();
-            file = null;
-        } else {
-            data = null;
-            file = dfos.getFile();
-        }
+    public ContentCache(final byte[] data) {
+        this.data = data;
+        this.file = null;
+    }
+
+    public ContentCache(final File file) {
+        this.data = null;
+        this.file = file;
     }
 
     @Override

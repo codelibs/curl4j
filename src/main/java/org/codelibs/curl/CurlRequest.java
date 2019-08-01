@@ -199,7 +199,11 @@ public class CurlRequest {
         connect(con -> {
             final RequestProcessor processor = new RequestProcessor(encoding, threshold);
             processor.accept(con);
-            actionListener.accept(processor.getResponse());
+            try (final CurlResponse res = processor.getResponse()) {
+                actionListener.accept(res);
+            } catch (final IOException e) {
+                exceptionListener.accept(e);
+            }
         }, exceptionListener);
     }
 

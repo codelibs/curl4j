@@ -34,9 +34,9 @@ import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.logging.Logger;
 
-import org.apache.commons.io.output.DeferredFileOutputStream;
 import org.codelibs.curl.Curl.Method;
 import org.codelibs.curl.io.ContentCache;
+import org.codelibs.curl.io.ContentOutputStream;
 
 public class CurlRequest {
 
@@ -267,7 +267,7 @@ public class CurlRequest {
 
         private void writeContent(final Supplier<InputStream> handler) {
             try (BufferedInputStream bis = new BufferedInputStream(handler.get());
-                    DeferredFileOutputStream dfos = new DeferredFileOutputStream(threshold, "curl4j-", ".tmp", Curl.tmpDir)) {
+                    ContentOutputStream dfos = new ContentOutputStream(threshold, Curl.tmpDir)) {
                 final byte[] bytes = new byte[4096];
                 int length = bis.read(bytes);
                 while (length != -1) {

@@ -15,17 +15,17 @@
  */
 package org.codelibs.curl.io;
 
+import org.apache.commons.io.output.DeferredFileOutputStream;
+
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 
-import org.apache.commons.io.output.DeferredFileOutputStream;
-
 public class ContentOutputStream extends DeferredFileOutputStream {
 
-    private static final String PREFIX = "curl4j-";
+    protected static final String PREFIX = "curl4j-";
 
-    private static final String SUFFIX = ".tmp";
+    protected static final String SUFFIX = ".tmp";
 
     protected boolean done = false;
 

@@ -33,12 +33,15 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
 import java.util.logging.Logger;
+import java.util.zip.GZIPInputStream;
 
 import org.codelibs.curl.Curl.Method;
 import org.codelibs.curl.io.ContentCache;
 import org.codelibs.curl.io.ContentOutputStream;
 
 public class CurlRequest {
+
+    protected static final String GZIP = "gzip";
 
     protected static final Logger logger = Logger.getLogger(CurlRequest.class.getName());
 
@@ -57,6 +60,8 @@ public class CurlRequest {
     protected List<String[]> headerList;
 
     protected String body;
+
+    protected String compression = null;
 
     protected ForkJoinPool threadPool;
 
@@ -102,6 +107,15 @@ public class CurlRequest {
 
     public CurlRequest threshold(final int threshold) {
         this.threshold = threshold;
+        return this;
+    }
+
+    public CurlRequest gzip() {
+        return compression(GZIP);
+    }
+
+    public CurlRequest compression(final String compression) {
+        this.compression = compression;
         return this;
     }
 
@@ -164,6 +178,9 @@ public class CurlRequest {
                         logger.fine(() -> ">>> " + values[0] + "=" + values[1]);
                         connection.addRequestProperty(values[0], values[1]);
                     }
+                }
+                if (compression != null) {
+                    connection.setRequestProperty("Accept-Encoding", compression);
                 }
 
                 if (connectionBuilder != null) {
@@ -257,11 +274,19 @@ public class CurlRequest {
             writeContent(() -> {
                 try {
                     if (con.getResponseCode() < 400) {
-                        return con.getInputStream();
+                        if (GZIP.equals(con.getContentEncoding())) {
+                            return new GZIPInputStream(con.getInputStream());
+                        } else {
+                            return con.getInputStream();
+                        }
                     } else if ("head".equalsIgnoreCase(con.getRequestMethod())) {
                         return new ByteArrayInputStream(new byte[0]);
                     } else {
-                        return con.getErrorStream();
+                        if (GZIP.equals(con.getContentEncoding())) {
+                            return new GZIPInputStream(con.getErrorStream());
+                        } else {
+                            return con.getErrorStream();
+                        }
                     }
                 } catch (IOException e) {
                     throw new CurlException("Failed to process a request.", e);

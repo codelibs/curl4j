@@ -1,4 +1,5 @@
 cUrl-like Java Client
+[![Java CI with Maven](https://github.com/codelibs/curl4j/actions/workflows/maven.yml/badge.svg)](https://github.com/codelibs/curl4j/actions/workflows/maven.yml)
 =====================
 
 curl4j is a simple cUrl-like Java client.

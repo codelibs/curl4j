@@ -35,6 +35,9 @@ import java.util.function.Supplier;
 import java.util.logging.Logger;
 import java.util.zip.GZIPInputStream;
 
+import javax.net.ssl.HttpsURLConnection;
+import javax.net.ssl.SSLSocketFactory;
+
 import org.codelibs.curl.Curl.Method;
 import org.codelibs.curl.io.ContentCache;
 import org.codelibs.curl.io.ContentOutputStream;
@@ -62,6 +65,8 @@ public class CurlRequest {
     protected String body;
 
     protected String compression = null;
+
+    protected SSLSocketFactory sslSocketFactory = null;
 
     protected ForkJoinPool threadPool;
 
@@ -119,6 +124,11 @@ public class CurlRequest {
         return this;
     }
 
+    public CurlRequest sslSocketFactory(final SSLSocketFactory sslSocketFactory) {
+        this.sslSocketFactory = sslSocketFactory;
+        return this;
+    }
+
     public CurlRequest body(final String body) {
         this.body = body;
         return this;
@@ -171,7 +181,7 @@ public class CurlRequest {
             try {
                 logger.fine(() -> ">>> " + method + " " + url);
                 final URL u = new URL(url);
-                connection = (HttpURLConnection) (proxy != null ? u.openConnection(proxy) : u.openConnection());
+                connection = open(u);
                 connection.setRequestMethod(method.toString());
                 if (headerList != null) {
                     for (final String[] values : headerList) {
@@ -210,6 +220,14 @@ public class CurlRequest {
         } else {
             task.run();
         }
+    }
+
+    protected HttpURLConnection open(final URL u) throws IOException {
+        final HttpURLConnection connection = (HttpURLConnection) (proxy != null ? u.openConnection(proxy) : u.openConnection());
+        if (sslSocketFactory != null && connection instanceof HttpsURLConnection) {
+            ((HttpsURLConnection) connection).setSSLSocketFactory(sslSocketFactory);
+        }
+        return connection;
     }
 
     public void execute(final Consumer<CurlResponse> actionListener, final Consumer<Exception> exceptionListener) {

@@ -6,7 +6,7 @@ curl4j is a simple cUrl-like Java client.
 
 ## Version
 
-[Versions in Maven Repository](http://central.maven.org/maven2/org/codelibs/curl4j/)
+[Versions in Maven Repository](https://repo1.maven.org/maven2/org/codelibs/curl4j/)
 
 ## Using Maven
 

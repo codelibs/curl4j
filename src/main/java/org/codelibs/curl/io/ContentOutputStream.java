@@ -15,13 +15,16 @@
  */
 package org.codelibs.curl.io;
 
-import org.apache.commons.io.output.DeferredFileOutputStream;
-
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.logging.Logger;
+
+import org.apache.commons.io.output.DeferredFileOutputStream;
 
 public class ContentOutputStream extends DeferredFileOutputStream {
+
+    protected static final Logger logger = Logger.getLogger(ContentOutputStream.class.getName());
 
     protected static final String PREFIX = "curl4j-";
 
@@ -41,12 +44,19 @@ public class ContentOutputStream extends DeferredFileOutputStream {
 
     @Override
     public void close() throws IOException {
-        if (!isInMemory() && !done) {
-            final File file = super.getFile();
-            if (file != null) {
-                Files.deleteIfExists(file.toPath());
+        try {
+            super.close();
+        } finally {
+            if (!isInMemory() && !done) {
+                final File file = super.getFile();
+                if (file != null) {
+                    try {
+                        Files.deleteIfExists(file.toPath());
+                    } catch (final IOException e) {
+                        logger.warning(e.getLocalizedMessage());
+                    }
+                }
             }
         }
-        super.close();
     }
 }

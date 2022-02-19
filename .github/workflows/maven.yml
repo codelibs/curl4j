@@ -5,14 +5,21 @@ name: Java CI with Maven
 
 on:
   push:
-    branches: [ master ]
+    branches:
+    - master
+    - "*.x"
   pull_request:
-    branches: [ master ]
+    branches:
+    - master
+    - "*.x"
 
 jobs:
   build:
+    runs-on: ${{ matrix.os }}
 
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
 
     steps:
     - uses: actions/checkout@v2

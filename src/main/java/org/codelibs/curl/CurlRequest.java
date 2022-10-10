@@ -20,6 +20,7 @@ import java.io.BufferedWriter;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
@@ -38,6 +39,7 @@ import java.util.zip.GZIPInputStream;
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLSocketFactory;
 
+import org.apache.commons.io.IOUtils;
 import org.codelibs.curl.Curl.Method;
 import org.codelibs.curl.io.ContentCache;
 import org.codelibs.curl.io.ContentOutputStream;
@@ -63,6 +65,8 @@ public class CurlRequest {
     protected List<String[]> headerList;
 
     protected String body;
+
+    protected InputStream bodyStream;
 
     protected String compression = null;
 
@@ -130,7 +134,18 @@ public class CurlRequest {
     }
 
     public CurlRequest body(final String body) {
+        if (bodyStream != null) {
+            throw new CurlException("body method is already called.");
+        }
         this.body = body;
+        return this;
+    }
+
+    public CurlRequest body(final InputStream stream) {
+        if (body != null) {
+            throw new CurlException("body method is already called.");
+        }
+        this.bodyStream = stream;
         return this;
     }
 
@@ -203,6 +218,13 @@ public class CurlRequest {
                     try (BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(connection.getOutputStream(), encoding))) {
                         writer.write(body);
                         writer.flush();
+                    }
+                } else if (bodyStream != null) {
+                    logger.fine(() -> ">>> <binary>");
+                    connection.setDoOutput(true);
+                    try (final OutputStream out = connection.getOutputStream()) {
+                        IOUtils.copy(bodyStream, out);
+                        out.flush();
                     }
                 }
 

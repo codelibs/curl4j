@@ -341,16 +341,17 @@ public class CurlRequest {
                 int length = bis.read(bytes);
                 while (length != -1) {
                     if (length != 0) {
+                        final int len = length;
+                        logger.fine(() -> {
+                            try {
+                                return "<<< " + new String(bytes, 0, len, encoding);
+                            } catch (final Exception e) {
+                                return "<<< <" + e.getMessage() + ">";
+                            }
+                        });
                         dfos.write(bytes, 0, length);
                     }
                     length = bis.read(bytes);
-                    logger.fine(() -> {
-                        try {
-                            return "<<< " + new String(bytes, encoding);
-                        } catch (UnsupportedEncodingException e) {
-                            return "<<< <" + e.getMessage() + ">";
-                        }
-                    });
                 }
                 dfos.flush();
                 final ContentCache contentCache;

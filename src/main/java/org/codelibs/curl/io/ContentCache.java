@@ -24,12 +24,58 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.util.logging.Logger;
 
+/**
+ * ContentCache is a class that provides a way to cache content either in memory or in a file.
+ * It implements the Closeable interface to ensure that resources are properly released.
+ *
+ * <p>This class supports two types of content caching:
+ * <ul>
+ *   <li>In-memory caching using a byte array</li>
+ *   <li>File-based caching using a File object</li>
+ * </ul>
+ *
+ * <p>When an instance of ContentCache is created with a byte array, the content is cached in memory.
+ * When an instance is created with a File object, the content is cached in the specified file.
+ *
+ * <p>The {@code close()} method deletes the file if the content is cached in a file.
+ *
+ * <p>The {@code getInputStream()} method provides an InputStream to read the cached content.
+ * If the content is cached in a file, it returns a FileInputStream. If the content is cached in memory,
+ * it returns a ByteArrayInputStream.
+ *
+ * <p>Example usage:
+ * <pre>
+ * {@code
+ * // In-memory caching
+ * byte[] data = "example data".getBytes();
+ * try (ContentCache cache = new ContentCache(data)) {
+ *     InputStream inputStream = cache.getInputStream();
+ *     // Read from inputStream
+ * }
+ *
+ * // File-based caching
+ * File file = new File("example.txt");
+ * try (ContentCache cache = new ContentCache(file)) {
+ *     InputStream inputStream = cache.getInputStream();
+ *     // Read from inputStream
+ * }
+ * }
+ * </pre>
+ *
+ * @author Your Name
+ */
 public class ContentCache implements Closeable {
 
     protected static final Logger logger = Logger.getLogger(ContentCache.class.getName());
 
+    /**
+     * A byte array that holds the cached content data.
+     */
     private final byte[] data;
 
+    /**
+     * The file that is used to cache the content.
+     */
     private final File file;
 
     public ContentCache(final byte[] data) {
@@ -49,6 +95,14 @@ public class ContentCache implements Closeable {
         }
     }
 
+    /**
+     * Returns an InputStream to read the content from the cache.
+     * If the content is stored in a file, a FileInputStream is returned.
+     * Otherwise, a ByteArrayInputStream is returned to read the data from memory.
+     *
+     * @return an InputStream to read the cached content
+     * @throws IOException if an I/O error occurs while creating the InputStream
+     */
     public InputStream getInputStream() throws IOException {
         if (file != null) {
             return new FileInputStream(file);

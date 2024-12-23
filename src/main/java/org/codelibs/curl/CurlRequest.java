@@ -44,68 +44,161 @@ import org.codelibs.curl.Curl.Method;
 import org.codelibs.curl.io.ContentCache;
 import org.codelibs.curl.io.ContentOutputStream;
 
+/**
+ * The CurlRequest class represents an HTTP request that can be configured and executed.
+ * It supports various HTTP methods, request parameters, headers, body content, and more.
+ */
 public class CurlRequest {
 
+    /**
+     * The GZIP compression type.
+     */
     protected static final String GZIP = "gzip";
 
+    /**
+     * Logger for logging request details.
+     */
     protected static final Logger logger = Logger.getLogger(CurlRequest.class.getName());
 
+    /**
+     * The URL for the HTTP request.
+     */
     protected String url;
 
+    /**
+     * The proxy to be used for the HTTP request.
+     */
     protected Proxy proxy;
 
+    /**
+     * The character encoding for the request.
+     */
     protected String encoding = "UTF-8";
 
-    protected int threshold = 1024 * 1024; // 1m
+    /**
+     * The threshold size for the request body.
+     */
+    protected int threshold = 1024 * 1024; // 1MB
 
+    /**
+     * The HTTP method for the request.
+     */
     protected Method method;
 
+    /**
+     * The list of request parameters.
+     */
     protected List<String> paramList;
 
+    /**
+     * The list of request headers.
+     */
     protected List<String[]> headerList;
 
+    /**
+     * The body content of the request.
+     */
     protected String body;
 
+    /**
+     * The input stream for the request body.
+     */
     protected InputStream bodyStream;
 
+    /**
+     * The compression type for the request.
+     */
     protected String compression = null;
 
+    /**
+     * The SSL socket factory for secure connections.
+     */
     protected SSLSocketFactory sslSocketFactory = null;
 
+    /**
+     * The thread pool for executing the request.
+     */
     protected ForkJoinPool threadPool;
 
+    /**
+     * The connection builder for customizing the connection.
+     */
     private BiConsumer<CurlRequest, HttpURLConnection> connectionBuilder;
 
+    /**
+     * Constructs a new CurlRequest with the specified HTTP method and URL.
+     *
+     * @param method the HTTP method
+     * @param url the URL
+     */
     public CurlRequest(final Method method, final String url) {
         this.method = method;
         this.url = url;
     }
 
+    /**
+     * Returns the proxy for the request.
+     *
+     * @return the proxy
+     */
     public Proxy proxy() {
         return proxy;
     }
 
+    /**
+     * Returns the character encoding for the request.
+     *
+     * @return the encoding
+     */
     public String encoding() {
         return encoding;
     }
 
+    /**
+     * Returns the threshold size for the request body.
+     *
+     * @return the threshold
+     */
     public int threshold() {
         return threshold;
     }
 
+    /**
+     * Returns the HTTP method for the request.
+     *
+     * @return the method
+     */
     public Method method() {
         return method;
     }
 
+    /**
+     * Returns the body content of the request.
+     *
+     * @return the body
+     */
     public String body() {
         return body;
     }
 
+    /**
+     * Sets the proxy for the request.
+     *
+     * @param proxy the proxy
+     * @return this CurlRequest instance
+     */
     public CurlRequest proxy(final Proxy proxy) {
         this.proxy = proxy;
         return this;
     }
 
+    /**
+     * Sets the character encoding for the request.
+     *
+     * @param encoding the encoding
+     * @return this CurlRequest instance
+     * @throws CurlException if the method is called after the param method
+     */
     public CurlRequest encoding(final String encoding) {
         if (paramList != null) {
             throw new CurlException("This method must be called before param method.");
@@ -114,25 +207,55 @@ public class CurlRequest {
         return this;
     }
 
+    /**
+     * Sets the threshold size for the request body.
+     *
+     * @param threshold the threshold
+     * @return this CurlRequest instance
+     */
     public CurlRequest threshold(final int threshold) {
         this.threshold = threshold;
         return this;
     }
 
+    /**
+     * Enables GZIP compression for the request.
+     *
+     * @return this CurlRequest instance
+     */
     public CurlRequest gzip() {
         return compression(GZIP);
     }
 
+    /**
+     * Sets the compression type for the request.
+     *
+     * @param compression the compression type
+     * @return this CurlRequest instance
+     */
     public CurlRequest compression(final String compression) {
         this.compression = compression;
         return this;
     }
 
+    /**
+     * Sets the SSL socket factory for secure connections.
+     *
+     * @param sslSocketFactory the SSL socket factory
+     * @return this CurlRequest instance
+     */
     public CurlRequest sslSocketFactory(final SSLSocketFactory sslSocketFactory) {
         this.sslSocketFactory = sslSocketFactory;
         return this;
     }
 
+    /**
+     * Sets the body content for the request.
+     *
+     * @param body the body content
+     * @return this CurlRequest instance
+     * @throws CurlException if the body method is already called
+     */
     public CurlRequest body(final String body) {
         if (bodyStream != null) {
             throw new CurlException("body method is already called.");
@@ -141,6 +264,13 @@ public class CurlRequest {
         return this;
     }
 
+    /**
+     * Sets the input stream for the request body.
+     *
+     * @param stream the input stream
+     * @return this CurlRequest instance
+     * @throws CurlException if the body method is already called
+     */
     public CurlRequest body(final InputStream stream) {
         if (body != null) {
             throw new CurlException("body method is already called.");
@@ -149,11 +279,24 @@ public class CurlRequest {
         return this;
     }
 
+    /**
+     * Sets the connection builder for customizing the connection.
+     *
+     * @param connectionBuilder the connection builder
+     * @return this CurlRequest instance
+     */
     public CurlRequest onConnect(final BiConsumer<CurlRequest, HttpURLConnection> connectionBuilder) {
         this.connectionBuilder = connectionBuilder;
         return this;
     }
 
+    /**
+     * Adds a request parameter.
+     *
+     * @param key the parameter key
+     * @param value the parameter value
+     * @return this CurlRequest instance
+     */
     public CurlRequest param(final String key, final String value) {
         if (value == null) {
             return this;
@@ -165,6 +308,13 @@ public class CurlRequest {
         return this;
     }
 
+    /**
+     * Adds a request header.
+     *
+     * @param key the header key
+     * @param value the header value
+     * @return this CurlRequest instance
+     */
     public CurlRequest header(final String key, final String value) {
         if (headerList == null) {
             headerList = new ArrayList<>();
@@ -173,6 +323,12 @@ public class CurlRequest {
         return this;
     }
 
+    /**
+     * Connects to the URL and executes the request.
+     *
+     * @param actionListener the action listener for handling the response
+     * @param exceptionListener the exception listener for handling exceptions
+     */
     public void connect(final Consumer<HttpURLConnection> actionListener, final Consumer<Exception> exceptionListener) {
         final Runnable task = () -> {
             if (paramList != null) {
@@ -244,6 +400,13 @@ public class CurlRequest {
         }
     }
 
+    /**
+     * Opens a connection to the specified URL.
+     *
+     * @param u the URL
+     * @return the HttpURLConnection
+     * @throws IOException if an I/O exception occurs
+     */
     protected HttpURLConnection open(final URL u) throws IOException {
         final HttpURLConnection connection = (HttpURLConnection) (proxy != null ? u.openConnection(proxy) : u.openConnection());
         if (sslSocketFactory != null && connection instanceof HttpsURLConnection) {
@@ -252,6 +415,12 @@ public class CurlRequest {
         return connection;
     }
 
+    /**
+     * Executes the request and processes the response.
+     *
+     * @param actionListener the action listener for handling the response
+     * @param exceptionListener the exception listener for handling exceptions
+     */
     public void execute(final Consumer<CurlResponse> actionListener, final Consumer<Exception> exceptionListener) {
         connect(con -> {
             final RequestProcessor processor = new RequestProcessor(encoding, threshold);
@@ -264,6 +433,11 @@ public class CurlRequest {
         }, exceptionListener);
     }
 
+    /**
+     * Executes the request and returns the response.
+     *
+     * @return the CurlResponse
+     */
     public CurlResponse execute() {
         this.threadPool = null;
         final RequestProcessor processor = new RequestProcessor(encoding, threshold);
@@ -273,6 +447,13 @@ public class CurlRequest {
         return processor.getResponse();
     }
 
+    /**
+     * Encodes the specified value using the character encoding.
+     *
+     * @param value the value to encode
+     * @return the encoded value
+     * @throws CurlException if the encoding is unsupported
+     */
     protected String encode(final String value) {
         try {
             return URLEncoder.encode(value, encoding);
@@ -281,11 +462,20 @@ public class CurlRequest {
         }
     }
 
+    /**
+     * Sets the thread pool for executing the request.
+     *
+     * @param threadPool the thread pool
+     * @return this CurlRequest instance
+     */
     public CurlRequest threadPool(final ForkJoinPool threadPool) {
         this.threadPool = threadPool;
         return this;
     }
 
+    /**
+     * The RequestProcessor class processes the HTTP request and handles the response.
+     */
     public static class RequestProcessor implements Consumer<HttpURLConnection> {
         protected CurlResponse response = new CurlResponse();
 
@@ -293,15 +483,31 @@ public class CurlRequest {
 
         private int threshold;
 
+        /**
+         * Constructs a new RequestProcessor with the specified encoding and threshold.
+         *
+         * @param encoding the character encoding
+         * @param threshold the threshold size
+         */
         public RequestProcessor(final String encoding, final int threshold) {
             this.encoding = encoding;
             this.threshold = threshold;
         }
 
+        /**
+         * Returns the CurlResponse.
+         *
+         * @return the response
+         */
         public CurlResponse getResponse() {
             return response;
         }
 
+        /**
+         * Processes the HTTP connection and handles the response.
+         *
+         * @param con the HttpURLConnection
+         */
         @Override
         public void accept(final HttpURLConnection con) {
             try {
@@ -334,6 +540,11 @@ public class CurlRequest {
             });
         }
 
+        /**
+         * Writes the content of the response to the CurlResponse.
+         *
+         * @param handler the input stream supplier
+         */
         private void writeContent(final Supplier<InputStream> handler) {
             try (BufferedInputStream bis = new BufferedInputStream(handler.get());
                     ContentOutputStream dfos = new ContentOutputStream(threshold, Curl.tmpDir)) {

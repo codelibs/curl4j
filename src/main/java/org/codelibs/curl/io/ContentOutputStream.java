@@ -22,6 +22,32 @@ import java.util.logging.Logger;
 
 import org.apache.commons.io.output.DeferredFileOutputStream;
 
+/**
+ * ContentOutputStream is a custom output stream that extends DeferredFileOutputStream.
+ * It writes data to a temporary file once the data size exceeds a specified threshold.
+ *
+ * <p>This class ensures that the temporary file is deleted if it is not needed.
+ * It uses a logger to log warnings if there are issues deleting the temporary file.</p>
+ *
+ * <p>Fields:</p>
+ * <ul>
+ *   <li>{@code logger} - Logger instance for logging warnings.</li>
+ *   <li>{@code PREFIX} - Prefix for the temporary file name.</li>
+ *   <li>{@code SUFFIX} - Suffix for the temporary file name.</li>
+ *   <li>{@code done} - Flag indicating whether the file has been retrieved.</li>
+ * </ul>
+ *
+ * <p>Constructors:</p>
+ * <ul>
+ *   <li>{@code ContentOutputStream(int threshold, File tmpDir)} - Constructs a ContentOutputStream with a specified threshold and temporary directory.</li>
+ * </ul>
+ *
+ * <p>Methods:</p>
+ * <ul>
+ *   <li>{@code getFile()} - Marks the file as retrieved and returns the file.</li>
+ *   <li>{@code close()} - Closes the stream and deletes the temporary file if it is not needed.</li>
+ * </ul>
+ */
 public class ContentOutputStream extends DeferredFileOutputStream {
 
     protected static final Logger logger = Logger.getLogger(ContentOutputStream.class.getName());

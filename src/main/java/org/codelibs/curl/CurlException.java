@@ -15,6 +15,19 @@
  */
 package org.codelibs.curl;
 
+/**
+ * Custom exception class for handling errors related to Curl operations.
+ * This class extends {@link RuntimeException} and provides constructors
+ * to create an exception instance with a message and an optional cause.
+ *
+ * <p>Usage examples:</p>
+ * <pre>
+ *     throw new CurlException("Error message");
+ *     throw new CurlException("Error message", cause);
+ * </pre>
+ *
+ * @see RuntimeException
+ */
 public class CurlException extends RuntimeException {
 
     private static final long serialVersionUID = 1L;

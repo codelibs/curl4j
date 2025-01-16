@@ -62,7 +62,6 @@ import java.util.logging.Logger;
  * }
  * </pre>
  *
- * @author Your Name
  */
 public class ContentCache implements Closeable {
 

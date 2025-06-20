@@ -5,6 +5,7 @@
 	<version>1.3.0-SNAPSHOT</version>
 	<packaging>jar</packaging>
 	<name>cUrl-Like Java client</name>
+	<description>cUrl-Like Java client</description>
 	<inceptionYear>2011</inceptionYear>
 	<licenses>
 		<license>

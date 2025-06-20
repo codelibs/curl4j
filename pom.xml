@@ -6,6 +6,7 @@
 	<packaging>jar</packaging>
 	<name>cUrl-Like Java client</name>
 	<description>cUrl-Like Java client</description>
+	<url>https://github.com/codelibs/curl4j</url>
 	<inceptionYear>2011</inceptionYear>
 	<licenses>
 		<license>

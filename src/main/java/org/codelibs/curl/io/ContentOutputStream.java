@@ -50,14 +50,32 @@ import org.apache.commons.io.output.DeferredFileOutputStream;
  */
 public class ContentOutputStream extends DeferredFileOutputStream {
 
+    /**
+     * The logger for this class.
+     */
     protected static final Logger logger = Logger.getLogger(ContentOutputStream.class.getName());
 
+    /**
+     * The prefix for the temporary file name.
+     */
     protected static final String PREFIX = "curl4j-";
 
+    /**
+     * The suffix for the temporary file name.
+     */
     protected static final String SUFFIX = ".tmp";
 
+    /**
+     * A flag indicating whether the file has been retrieved.
+     */
     protected boolean done = false;
 
+    /**
+     * Constructs a ContentOutputStream with a specified threshold and temporary directory.
+     *
+     * @param threshold the threshold in bytes for writing to memory before writing to a file
+     * @param tmpDir the temporary directory to create the file in
+     */
     public ContentOutputStream(final int threshold, final File tmpDir) {
         super(threshold, PREFIX, SUFFIX, tmpDir);
     }

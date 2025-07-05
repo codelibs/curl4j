@@ -44,8 +44,14 @@ import java.io.File;
  */
 public class Curl {
 
+    /**
+     * The temporary directory used by Curl. It is initialized to the system's temporary directory.
+     */
     public static final File tmpDir = new File(System.getProperty("java.io.tmpdir"));
 
+    /**
+     * Private constructor to prevent instantiation.
+     */
     protected Curl() {
         // nothing
     }
@@ -134,7 +140,38 @@ public class Curl {
      * </ul>
      */
     public enum Method {
-        GET, POST, PUT, DELETE, HEAD, OPTIONS, TRACE, CONNECT;
+        /**
+         * HTTP GET method.
+         */
+        GET,
+        /**
+         * HTTP POST method.
+         */
+        POST,
+        /**
+         * HTTP PUT method.
+         */
+        PUT,
+        /**
+         * HTTP DELETE method.
+         */
+        DELETE,
+        /**
+         * HTTP HEAD method.
+         */
+        HEAD,
+        /**
+         * HTTP OPTIONS method.
+         */
+        OPTIONS,
+        /**
+         * HTTP TRACE method.
+         */
+        TRACE,
+        /**
+         * HTTP CONNECT method.
+         */
+        CONNECT;
     }
 
 }

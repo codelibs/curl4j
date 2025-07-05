@@ -35,6 +35,13 @@ import org.codelibs.curl.io.ContentCache;
 public class CurlResponse implements Closeable {
 
     /**
+     * Constructs a new CurlResponse.
+     */
+    public CurlResponse() {
+        // nothing
+    }
+
+    /**
      * The HTTP status code of the response.
      */
     private int httpStatusCode;

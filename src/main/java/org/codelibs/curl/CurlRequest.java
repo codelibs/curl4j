@@ -477,6 +477,9 @@ public class CurlRequest {
      * The RequestProcessor class processes the HTTP request and handles the response.
      */
     public static class RequestProcessor implements Consumer<HttpURLConnection> {
+        /**
+         * The CurlResponse object to store the response.
+         */
         protected CurlResponse response = new CurlResponse();
 
         private final String encoding;

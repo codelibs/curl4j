@@ -65,6 +65,9 @@ import java.util.logging.Logger;
  */
 public class ContentCache implements Closeable {
 
+    /**
+     * The logger for this class.
+     */
     protected static final Logger logger = Logger.getLogger(ContentCache.class.getName());
 
     /**
@@ -77,11 +80,21 @@ public class ContentCache implements Closeable {
      */
     private final File file;
 
+    /**
+     * Constructs a ContentCache with the given byte array data.
+     *
+     * @param data the byte array containing the content
+     */
     public ContentCache(final byte[] data) {
         this.data = data;
         this.file = null;
     }
 
+    /**
+     * Constructs a ContentCache with the given file.
+     *
+     * @param file the file containing the content
+     */
     public ContentCache(final File file) {
         this.data = null;
         this.file = file;

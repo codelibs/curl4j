@@ -202,7 +202,8 @@ public class CurlResponse implements Closeable {
         if (headers != null) {
             final Map<String, List<String>> map = new HashMap<>();
             headers.entrySet().stream().filter(e -> e.getKey() != null)
-                    .forEach(e -> map.put(e.getKey().toLowerCase(Locale.ROOT), List.copyOf(e.getValue())));
+                    .forEach(e -> map.put(e.getKey().toLowerCase(Locale.ROOT),
+                            e.getValue() == null ? List.of() : List.copyOf(e.getValue())));
             this.headers = Map.copyOf(map);
         }
     }

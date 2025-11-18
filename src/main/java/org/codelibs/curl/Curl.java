@@ -51,9 +51,9 @@ public class Curl {
     public static final File tmpDir = new File(System.getProperty("java.io.tmpdir"));
 
     /**
-     * Private constructor to prevent instantiation.
+     * Protected constructor to prevent direct instantiation but allow inheritance.
      */
-    private Curl() {
+    protected Curl() {
         // nothing
     }
 

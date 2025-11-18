@@ -116,6 +116,36 @@ public class CurlResponseTest {
     }
 
     @Test
+    public void testHeadersWithNullValue() {
+        CurlResponse response = new CurlResponse();
+        Map<String, List<String>> headers = new HashMap<>();
+        headers.put("Content-Type", null);
+        headers.put("Content-Length", Arrays.asList("100"));
+
+        response.setHeaders(headers);
+
+        Map<String, List<String>> result = response.getHeaders();
+        assertNotNull(result);
+        assertEquals(2, result.size());
+        assertTrue(result.containsKey("content-type"));
+        assertTrue(result.containsKey("content-length"));
+        // Null value should be replaced with empty list
+        assertNotNull(result.get("content-type"));
+        assertEquals(0, result.get("content-type").size());
+    }
+
+    @Test
+    public void testGetHeaderValuesWhenHeadersNull() {
+        CurlResponse response = new CurlResponse();
+        // Don't set any headers
+
+        String[] values = response.getHeaderValues("Content-Type");
+
+        assertNotNull(values);
+        assertEquals(0, values.length);
+    }
+
+    @Test
     public void testGetHeaderValue() {
         CurlResponse response = new CurlResponse();
         Map<String, List<String>> headers = new HashMap<>();

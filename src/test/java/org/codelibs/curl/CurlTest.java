@@ -136,6 +136,19 @@ public class CurlTest {
     }
 
     @Test
+    public void test_TraceFactoryMethod() {
+        // ## Arrange ##
+        final String url = "http://example.com";
+
+        // ## Act ##
+        final CurlRequest request = Curl.trace(url);
+
+        // ## Assert ##
+        assertNotNull(request);
+        assertEquals(Method.TRACE, request.method());
+    }
+
+    @Test
     public void test_TmpDirInitialization() {
         // ## Act ##
         final File tmpDir = Curl.tmpDir;

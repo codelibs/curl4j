@@ -338,10 +338,10 @@ public class CurlRequest {
      */
     public void connect(final Consumer<HttpURLConnection> actionListener, final Consumer<Exception> exceptionListener) {
         final Runnable task = () -> {
-            String finalUrl = url;
+            final String finalUrl;
             if (paramList != null) {
                 char sp;
-                if (finalUrl.indexOf('?') == -1) {
+                if (url.indexOf('?') == -1) {
                     sp = '?';
                 } else {
                     sp = '&';
@@ -353,7 +353,9 @@ public class CurlRequest {
                         sp = '&';
                     }
                 }
-                finalUrl = finalUrl + urlBuf.toString();
+                finalUrl = url + urlBuf.toString();
+            } else {
+                finalUrl = url;
             }
 
             HttpURLConnection connection = null;

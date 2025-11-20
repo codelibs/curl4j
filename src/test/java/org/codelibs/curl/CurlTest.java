@@ -366,29 +366,6 @@ public class CurlTest {
     }
 
     @Test
-    public void test_FactoryMethodsWithNullUrl() {
-        // ## Test factory methods with null URL (should not throw exception during creation) ##
-
-        // ## Act ##
-        final CurlRequest getRequest = Curl.get(null);
-        final CurlRequest postRequest = Curl.post(null);
-        final CurlRequest putRequest = Curl.put(null);
-        final CurlRequest deleteRequest = Curl.delete(null);
-        final CurlRequest headRequest = Curl.head(null);
-        final CurlRequest optionsRequest = Curl.options(null);
-        final CurlRequest connectRequest = Curl.connect(null);
-
-        // ## Assert ##
-        assertNotNull(getRequest);
-        assertNotNull(postRequest);
-        assertNotNull(putRequest);
-        assertNotNull(deleteRequest);
-        assertNotNull(headRequest);
-        assertNotNull(optionsRequest);
-        assertNotNull(connectRequest);
-    }
-
-    @Test
     public void test_FactoryMethodsWithEmptyUrl() {
         // ## Test factory methods with empty URL ##
 

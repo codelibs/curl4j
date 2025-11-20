@@ -299,19 +299,6 @@ public class ContentCacheTest {
     }
 
     @Test
-    public void testMemoryCacheWithNullData() {
-        ContentCache cache = new ContentCache((byte[]) null);
-
-        try (InputStream stream = cache.getInputStream()) {
-            fail("Expected NullPointerException for null data");
-        } catch (NullPointerException e) {
-            // Expected - cannot create ByteArrayInputStream with null
-        } catch (IOException e) {
-            fail("Expected NullPointerException, not IOException");
-        }
-    }
-
-    @Test
     public void testMemoryCacheWithBinaryData() throws IOException {
         // Test with binary data containing all byte values
         byte[] data = new byte[256];

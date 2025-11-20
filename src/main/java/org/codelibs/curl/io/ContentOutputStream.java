@@ -86,6 +86,13 @@ public class ContentOutputStream extends DeferredFileOutputStream {
         return super.getFile();
     }
 
+    /**
+     * Closes the stream and deletes the temporary file if it was not retrieved.
+     * If an error occurs during file deletion, it is logged but not thrown to avoid
+     * masking exceptions from the main operation.
+     *
+     * @throws IOException if an I/O error occurs during stream closure
+     */
     @Override
     public void close() throws IOException {
         try {
@@ -97,7 +104,8 @@ public class ContentOutputStream extends DeferredFileOutputStream {
                     try {
                         Files.deleteIfExists(file.toPath());
                     } catch (final IOException e) {
-                        logger.warning(e.getLocalizedMessage());
+                        // Log the error but don't throw to avoid masking exceptions from the main operation
+                        logger.warning("Failed to delete temporary file: " + file.getAbsolutePath() + " - " + e.getLocalizedMessage());
                     }
                 }
             }

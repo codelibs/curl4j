@@ -56,11 +56,50 @@ public class ContentCacheTest {
     }
 
     @Test
+    public void testMemoryBasedCacheConstructorWithNull() {
+        try {
+            new ContentCache((byte[]) null);
+            fail("Expected IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("data must not be null"));
+        }
+    }
+
+    @Test
+    public void testMemoryBasedCacheDefensiveCopy() throws IOException {
+        byte[] data = "Hello, World!".getBytes();
+        byte[] originalData = data.clone();
+        ContentCache cache = new ContentCache(data);
+
+        // Modify the original array
+        data[0] = 'X';
+
+        // Verify that the cache's data is not affected
+        try (InputStream stream = cache.getInputStream()) {
+            byte[] buffer = new byte[1024];
+            int bytesRead = stream.read(buffer);
+            byte[] result = new byte[bytesRead];
+            System.arraycopy(buffer, 0, result, 0, bytesRead);
+            assertArrayEquals(originalData, result);
+        }
+    }
+
+    @Test
     public void testFileBasedCacheConstructor() throws IOException {
         tempFile = File.createTempFile("test", ".tmp", Curl.tmpDir);
         ContentCache cache = new ContentCache(tempFile);
 
         assertNotNull(cache);
+    }
+
+    @Test
+    public void testFileBasedCacheConstructorWithNull() {
+        try {
+            new ContentCache((File) null);
+            fail("Expected IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("file must not be null"));
+        }
     }
 
     @Test
@@ -256,19 +295,6 @@ public class ContentCacheTest {
             fail("Expected IOException for non-existent file");
         } catch (IOException e) {
             // Expected - file doesn't exist
-        }
-    }
-
-    @Test
-    public void testMemoryCacheWithNullData() {
-        ContentCache cache = new ContentCache((byte[]) null);
-
-        try (InputStream stream = cache.getInputStream()) {
-            fail("Expected NullPointerException for null data");
-        } catch (NullPointerException e) {
-            // Expected - cannot create ByteArrayInputStream with null
-        } catch (IOException e) {
-            fail("Expected NullPointerException, not IOException");
         }
     }
 

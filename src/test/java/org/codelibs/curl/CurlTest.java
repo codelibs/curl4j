@@ -136,6 +136,19 @@ public class CurlTest {
     }
 
     @Test
+    public void test_TraceFactoryMethod() {
+        // ## Arrange ##
+        final String url = "http://example.com";
+
+        // ## Act ##
+        final CurlRequest request = Curl.trace(url);
+
+        // ## Assert ##
+        assertNotNull(request);
+        assertEquals(Method.TRACE, request.method());
+    }
+
+    @Test
     public void test_TmpDirInitialization() {
         // ## Act ##
         final File tmpDir = Curl.tmpDir;
@@ -350,29 +363,6 @@ public class CurlTest {
 
         // ## Assert ##
         assertEquals(new File(systemTmpDir).getAbsolutePath(), curlTmpDir);
-    }
-
-    @Test
-    public void test_FactoryMethodsWithNullUrl() {
-        // ## Test factory methods with null URL (should not throw exception during creation) ##
-
-        // ## Act ##
-        final CurlRequest getRequest = Curl.get(null);
-        final CurlRequest postRequest = Curl.post(null);
-        final CurlRequest putRequest = Curl.put(null);
-        final CurlRequest deleteRequest = Curl.delete(null);
-        final CurlRequest headRequest = Curl.head(null);
-        final CurlRequest optionsRequest = Curl.options(null);
-        final CurlRequest connectRequest = Curl.connect(null);
-
-        // ## Assert ##
-        assertNotNull(getRequest);
-        assertNotNull(postRequest);
-        assertNotNull(putRequest);
-        assertNotNull(deleteRequest);
-        assertNotNull(headRequest);
-        assertNotNull(optionsRequest);
-        assertNotNull(connectRequest);
     }
 
     @Test

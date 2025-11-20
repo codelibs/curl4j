@@ -45,7 +45,7 @@ import org.codelibs.curl.CurlResponse;
 try (CurlResponse response = Curl.get("https://example.com")
                                 .param("q", "curl4j")
                                 .header("Accept", "application/json")
-                                .executeSync()) {
+                                .execute()) {
     System.out.println("Status: " + response.getHttpStatusCode());
     System.out.println(response.getContentAsString());
 }

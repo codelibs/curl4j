@@ -84,9 +84,13 @@ public class ContentCache implements Closeable {
      * Constructs a ContentCache with the given byte array data.
      *
      * @param data the byte array containing the content
+     * @throws IllegalArgumentException if data is null
      */
     public ContentCache(final byte[] data) {
-        this.data = data;
+        if (data == null) {
+            throw new IllegalArgumentException("data must not be null");
+        }
+        this.data = data.clone();
         this.file = null;
     }
 
@@ -94,8 +98,12 @@ public class ContentCache implements Closeable {
      * Constructs a ContentCache with the given file.
      *
      * @param file the file containing the content
+     * @throws IllegalArgumentException if file is null
      */
     public ContentCache(final File file) {
+        if (file == null) {
+            throw new IllegalArgumentException("file must not be null");
+        }
         this.data = null;
         this.file = file;
     }

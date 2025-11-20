@@ -35,6 +35,7 @@ import java.io.File;
  *   <li>HEAD</li>
  *   <li>OPTIONS</li>
  *   <li>CONNECT</li>
+ *   <li>TRACE</li>
  * </ul>
  *
  * <p>The Curl class also defines an enum {@link Method} which lists all supported HTTP methods.</p>
@@ -50,7 +51,7 @@ public class Curl {
     public static final File tmpDir = new File(System.getProperty("java.io.tmpdir"));
 
     /**
-     * Private constructor to prevent instantiation.
+     * Protected constructor to prevent direct instantiation but allow inheritance.
      */
     protected Curl() {
         // nothing
@@ -124,6 +125,16 @@ public class Curl {
      */
     public static CurlRequest connect(final String url) {
         return new CurlRequest(Method.CONNECT, url);
+    }
+
+    /**
+     * Creates a new CurlRequest with the HTTP TRACE method for the specified URL.
+     *
+     * @param url the URL to send the TRACE request to
+     * @return a new CurlRequest object configured with the TRACE method and the specified URL
+     */
+    public static CurlRequest trace(final String url) {
+        return new CurlRequest(Method.TRACE, url);
     }
 
     /**

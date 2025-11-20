@@ -53,6 +53,28 @@ public class CurlRequestTest {
     }
 
     @Test
+    public void testConstructorWithNullMethod() {
+        String url = "https://example.com";
+
+        try {
+            new CurlRequest(null, url);
+            fail("Expected IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("method must not be null"));
+        }
+    }
+
+    @Test
+    public void testConstructorWithNullUrl() {
+        try {
+            new CurlRequest(Method.GET, null);
+            fail("Expected IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("url must not be null"));
+        }
+    }
+
+    @Test
     public void testProxyMethod() {
         CurlRequest request = new CurlRequest(Method.GET, "https://example.com");
         Proxy proxy = Proxy.NO_PROXY;

@@ -130,8 +130,15 @@ public class CurlRequest {
      *
      * @param method the HTTP method
      * @param url the URL
+     * @throws IllegalArgumentException if method or url is null
      */
     public CurlRequest(final Method method, final String url) {
+        if (method == null) {
+            throw new IllegalArgumentException("method must not be null");
+        }
+        if (url == null) {
+            throw new IllegalArgumentException("url must not be null");
+        }
         this.method = method;
         this.url = url;
     }
@@ -331,6 +338,7 @@ public class CurlRequest {
      */
     public void connect(final Consumer<HttpURLConnection> actionListener, final Consumer<Exception> exceptionListener) {
         final Runnable task = () -> {
+            final String finalUrl;
             if (paramList != null) {
                 char sp;
                 if (url.indexOf('?') == -1) {
@@ -345,13 +353,15 @@ public class CurlRequest {
                         sp = '&';
                     }
                 }
-                url = url + urlBuf.toString();
+                finalUrl = url + urlBuf.toString();
+            } else {
+                finalUrl = url;
             }
 
             HttpURLConnection connection = null;
             try {
-                logger.fine(() -> ">>> " + method + " " + url);
-                final URL u = new URL(url);
+                logger.fine(() -> ">>> " + method + " " + finalUrl);
+                final URL u = new URL(finalUrl);
                 connection = open(u);
                 connection.setRequestMethod(method.toString());
                 if (headerList != null) {
@@ -386,7 +396,7 @@ public class CurlRequest {
 
                 actionListener.accept(connection);
             } catch (final Exception e) {
-                exceptionListener.accept(new CurlException("Failed to access to " + url, e));
+                exceptionListener.accept(new CurlException("Failed to access to " + finalUrl, e));
             } finally {
                 if (connection != null) {
                     connection.disconnect();
@@ -439,12 +449,17 @@ public class CurlRequest {
      * @return the CurlResponse
      */
     public CurlResponse execute() {
-        this.threadPool = null;
-        final RequestProcessor processor = new RequestProcessor(encoding, threshold);
-        connect(processor, e -> {
-            throw new CurlException("Failed to process a request.", e);
-        });
-        return processor.getResponse();
+        final ForkJoinPool originalThreadPool = this.threadPool;
+        try {
+            this.threadPool = null;
+            final RequestProcessor processor = new RequestProcessor(encoding, threshold);
+            connect(processor, e -> {
+                throw new CurlException("Failed to process a request.", e);
+            });
+            return processor.getResponse();
+        } finally {
+            this.threadPool = originalThreadPool;
+        }
     }
 
     /**
@@ -528,7 +543,7 @@ public class CurlRequest {
                         } else {
                             return con.getInputStream();
                         }
-                    } else if ("head".equalsIgnoreCase(con.getRequestMethod())) {
+                    } else if (Method.HEAD.toString().equalsIgnoreCase(con.getRequestMethod())) {
                         return new ByteArrayInputStream(new byte[0]);
                     } else {
                         if (GZIP.equals(con.getContentEncoding())) {

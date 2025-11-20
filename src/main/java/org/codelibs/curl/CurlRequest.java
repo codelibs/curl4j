@@ -388,9 +388,8 @@ public class CurlRequest {
                 } else if (bodyStream != null) {
                     logger.fine(() -> ">>> <binary>");
                     connection.setDoOutput(true);
-                    try (final OutputStream out = connection.getOutputStream();
-                            final InputStream in = bodyStream) {
-                        IOUtils.copy(in, out);
+                    try (final OutputStream out = connection.getOutputStream()) {
+                        IOUtils.copy(bodyStream, out);
                         out.flush();
                     }
                 }

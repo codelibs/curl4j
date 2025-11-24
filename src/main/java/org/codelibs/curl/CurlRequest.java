@@ -83,7 +83,7 @@ public class CurlRequest {
     /**
      * The HTTP method for the request.
      */
-    protected Method method;
+    protected final Method method;
 
     /**
      * The list of request parameters.
@@ -126,20 +126,27 @@ public class CurlRequest {
     private BiConsumer<CurlRequest, HttpURLConnection> connectionBuilder;
 
     /**
+     * Constructs a new CurlRequest with the specified HTTP method.
+     *
+     * @param method the HTTP method
+     * @throws IllegalArgumentException if method is null
+     */
+    public CurlRequest(final Method method) {
+        if (method == null) {
+            throw new IllegalArgumentException("method must not be null");
+        }
+        this.method = method;
+    }
+
+    /**
      * Constructs a new CurlRequest with the specified HTTP method and URL.
      *
      * @param method the HTTP method
      * @param url the URL
-     * @throws IllegalArgumentException if method or url is null
+     * @throws IllegalArgumentException if method is null
      */
     public CurlRequest(final Method method, final String url) {
-        if (method == null) {
-            throw new IllegalArgumentException("method must not be null");
-        }
-        if (url == null) {
-            throw new IllegalArgumentException("url must not be null");
-        }
-        this.method = method;
+        this(method);
         this.url = url;
     }
 

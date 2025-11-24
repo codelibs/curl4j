@@ -53,6 +53,18 @@ public class CurlRequestTest {
     }
 
     @Test
+    public void testConstructorWithNullUrl() {
+        // URL can be null with the two-argument constructor
+        CurlRequest request = new CurlRequest(Method.DELETE, null);
+
+        assertEquals(Method.DELETE, request.method());
+        assertEquals("UTF-8", request.encoding());
+        assertEquals(1024 * 1024, request.threshold());
+        assertNull(request.proxy());
+        assertNull(request.body());
+    }
+
+    @Test
     public void testConstructorWithNullMethod() {
         String url = "https://example.com";
 
@@ -65,12 +77,23 @@ public class CurlRequestTest {
     }
 
     @Test
-    public void testConstructorWithNullUrl() {
+    public void testSingleArgumentConstructor() {
+        CurlRequest request = new CurlRequest(Method.POST);
+
+        assertEquals(Method.POST, request.method());
+        assertEquals("UTF-8", request.encoding());
+        assertEquals(1024 * 1024, request.threshold());
+        assertNull(request.proxy());
+        assertNull(request.body());
+    }
+
+    @Test
+    public void testSingleArgumentConstructorWithNullMethod() {
         try {
-            new CurlRequest(Method.GET, null);
+            new CurlRequest(null);
             fail("Expected IllegalArgumentException");
         } catch (IllegalArgumentException e) {
-            assertTrue(e.getMessage().contains("url must not be null"));
+            assertTrue(e.getMessage().contains("method must not be null"));
         }
     }
 
@@ -318,10 +341,7 @@ public class CurlRequestTest {
         CurlRequest request = new CurlRequest(Method.GET, "https://example.com");
 
         // Add params with special characters
-        request.param("name", "John Doe")
-               .param("email", "test@example.com")
-               .param("query", "hello & goodbye")
-               .param("special", "100%");
+        request.param("name", "John Doe").param("email", "test@example.com").param("query", "hello & goodbye").param("special", "100%");
 
         assertNotNull(request);
         assertEquals(Method.GET, request.method());
@@ -332,10 +352,8 @@ public class CurlRequestTest {
         CurlRequest request = new CurlRequest(Method.POST, "https://example.com");
 
         // Add multiple headers
-        request.header("Accept", "application/json")
-               .header("Content-Type", "application/json")
-               .header("Authorization", "Bearer token123")
-               .header("X-Custom-Header", "custom-value");
+        request.header("Accept", "application/json").header("Content-Type", "application/json").header("Authorization", "Bearer token123")
+                .header("X-Custom-Header", "custom-value");
 
         assertNotNull(request);
     }
@@ -562,20 +580,11 @@ public class CurlRequestTest {
     @Test
     public void testComplexFluentChaining() {
         // Test complex fluent chaining with various configurations
-        CurlRequest request = new CurlRequest(Method.POST, "https://api.example.com/v1/users")
-            .encoding("UTF-8")
-            .threshold(2048)
-            .gzip()
-            .proxy(Proxy.NO_PROXY)
-            .sslSocketFactory((SSLSocketFactory) SSLSocketFactory.getDefault())
-            .param("filter", "active")
-            .param("sort", "name")
-            .header("Accept", "application/json")
-            .header("Content-Type", "application/json")
-            .header("Authorization", "Bearer token")
-            .body("{\"name\":\"test\"}")
-            .threadPool(new ForkJoinPool())
-            .onConnect((req, conn) -> conn.setConnectTimeout(5000));
+        CurlRequest request = new CurlRequest(Method.POST, "https://api.example.com/v1/users").encoding("UTF-8").threshold(2048).gzip()
+                .proxy(Proxy.NO_PROXY).sslSocketFactory((SSLSocketFactory) SSLSocketFactory.getDefault()).param("filter", "active")
+                .param("sort", "name").header("Accept", "application/json").header("Content-Type", "application/json")
+                .header("Authorization", "Bearer token").body("{\"name\":\"test\"}").threadPool(new ForkJoinPool())
+                .onConnect((req, conn) -> conn.setConnectTimeout(5000));
 
         assertNotNull(request);
         assertEquals(Method.POST, request.method());

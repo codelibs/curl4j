@@ -6,6 +6,36 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 curl4j is a simple cURL-like Java HTTP client library providing a fluent API for building HTTP requests. It's designed to be minimal with only Apache Commons IO as a dependency.
 
+## Directory Structure
+
+```
+curl4j/
+├── src/
+│   ├── main/java/org/codelibs/curl/
+│   │   ├── Curl.java              # Static entry point with factory methods
+│   │   ├── CurlRequest.java       # Fluent request builder
+│   │   ├── CurlResponse.java      # Response wrapper (implements Closeable)
+│   │   ├── CurlException.java     # Unchecked exception for HTTP errors
+│   │   └── io/
+│   │       ├── ContentCache.java       # In-memory or file-based caching
+│   │       └── ContentOutputStream.java # Threshold-based output stream
+│   └── test/java/org/codelibs/curl/
+│       ├── CurlTest.java          # Factory method tests
+│       ├── CurlRequestTest.java   # Request builder tests
+│       ├── CurlResponseTest.java  # Response handling tests
+│       ├── CurlExceptionTest.java # Exception tests
+│       └── io/
+│           ├── ContentCacheTest.java
+│           ├── ContentOutputStreamTest.java
+│           └── IOIntegrationTest.java
+├── .github/workflows/             # CI/CD configuration
+│   ├── maven.yml                  # Build and test workflow
+│   └── codeql-analysis.yml        # Security analysis
+├── pom.xml                        # Maven build configuration
+├── README.md                      # Project documentation
+└── CLAUDE.md                      # This file
+```
+
 ## Development Commands
 
 ### Build and Test
@@ -16,25 +46,25 @@ mvn clean test
 # Full build with packaging
 mvn clean package
 
-# Run tests only
-mvn test
-
-# Run specific tests
+# Run specific test class
 mvn test -Dtest=CurlTest
 mvn test -Dtest=CurlRequestTest
 mvn test -Dtest=CurlResponseTest
 mvn test -Dtest=CurlExceptionTest
+
+# Run I/O layer tests
+mvn test -Dtest=ContentCacheTest
+mvn test -Dtest=ContentOutputStreamTest
+mvn test -Dtest=IOIntegrationTest
 ```
 
 ### Code Quality
 ```bash
-# Format code (using external formatter config)
+# Format code
 mvn formatter:format
 
-# Check license headers
+# Check/update license headers
 mvn license:check
-
-# Add/update license headers
 mvn license:format
 
 # Generate Javadoc
@@ -44,60 +74,52 @@ mvn javadoc:javadoc
 mvn jacoco:report
 ```
 
-### Release Process
-```bash
-# Sign artifacts (for releases)
-mvn verify
-
-# Deploy to Maven Central via Sonatype Central Portal
-mvn deploy
-```
-
 ## Architecture
 
 ### Core Components
 
-- **`org.codelibs.curl.Curl`**: Static entry point providing factory methods for all HTTP methods (GET, POST, PUT, DELETE, HEAD, OPTIONS, CONNECT, TRACE)
-- **`org.codelibs.curl.CurlRequest`**: Fluent request builder supporting parameters, headers, body content, SSL config, proxies, timeouts, and caching
-- **`org.codelibs.curl.CurlResponse`**: Response wrapper implementing `Closeable` for proper resource management
-- **`org.codelibs.curl.CurlException`**: Unchecked exception for HTTP errors
+- **`Curl`**: Static entry point providing factory methods for all HTTP methods (GET, POST, PUT, DELETE, HEAD, OPTIONS, CONNECT, TRACE). Also defines the `Method` enum and `tmpDir` constant.
+
+- **`CurlRequest`**: Fluent request builder supporting query parameters, headers, body content, GZIP compression, SSL configuration, proxy settings, encoding, threshold, custom connection configuration, and async execution.
+
+- **`CurlResponse`**: Response wrapper implementing `Closeable`. Provides HTTP status code, headers, and content access methods.
+
+- **`CurlException`**: Unchecked RuntimeException for HTTP errors.
 
 ### I/O Layer
 
-- **`org.codelibs.curl.io.ContentCache`**: Handles automatic in-memory or on-disk caching of request/response bodies
-- **`org.codelibs.curl.io.ContentOutputStream`**: Streaming utilities for efficient content handling
+- **`ContentCache`**: In-memory or file-based caching. Implements `Closeable` and auto-deletes file cache on close.
 
-### Key Design Patterns
-
-1. **Fluent Builder Pattern**: `CurlRequest` uses method chaining for configuration
-2. **Factory Pattern**: `Curl` class provides static factory methods for each HTTP method
-3. **Resource Management**: `CurlResponse` implements `Closeable` for try-with-resources
-4. **Async Support**: Both synchronous (`executeSync()`) and asynchronous (`execute()`) execution modes
+- **`ContentOutputStream`**: Extends `DeferredFileOutputStream`. Writes to memory until threshold (default 1MB) exceeded, then spills to temp file.
 
 ## Technical Details
 
 - **Java Version**: 17+
-- **Dependencies**:
-  - Apache Commons IO 2.19.0 (runtime)
-  - JUnit 4.13.2 (test)
+- **Dependencies**: Apache Commons IO (runtime), JUnit 4 (test)
 - **Module Name**: `org.codelibs.curl4j`
-- **Package Structure**: `org.codelibs.curl.*`
-- **Build Tool**: Maven 3.x
-- **Test Coverage**: JaCoCo plugin enabled
+- **Package**: `org.codelibs.curl.*`
 
 ## Code Style
 
-- Uses external Eclipse formatter configuration from CodeLibs
-- Apache License 2.0 headers on all source files (updated to 2025)
-- Comprehensive Javadoc documentation required
-- Code coverage reporting with JaCoCo
+- Uses external Eclipse formatter from CodeLibs
+- Apache License 2.0 headers on all source files
+- Comprehensive Javadoc on public APIs
 
-## Test Coverage
+## Test Conventions
 
-The project includes comprehensive unit tests for all core components:
-- `CurlTest`: Tests for static factory methods and basic HTTP operations
-- `CurlRequestTest`: Tests for request builder, headers, parameters, body content, SSL, proxies, timeouts
-- `CurlResponseTest`: Tests for response handling, status codes, content retrieval, resource management
-- `CurlExceptionTest`: Tests for exception handling and error scenarios
-- I/O layer tests: `ContentCacheTest`, `ContentOutputStreamTest`
+- Test class names end with `Test`
+- Test methods start with `test_` prefix
+- Tests use `## Arrange ##`, `## Act ##`, `## Assert ##` comments
+- Some integration tests require network access
 
+## Important Notes for AI Assistants
+
+1. **Resource Management**: Always use try-with-resources with `CurlResponse`.
+
+2. **Null Safety**: Constructors validate null arguments. Follow this pattern.
+
+3. **Thread Safety**: `RequestProcessor` is single-use per request.
+
+4. **Encoding**: Call `encoding()` before `param()` methods.
+
+5. **Threshold**: Default 1MB. Smaller content stays in memory; larger spills to temp files.

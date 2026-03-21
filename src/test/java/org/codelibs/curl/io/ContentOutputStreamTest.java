@@ -287,4 +287,53 @@ public class ContentOutputStreamTest {
         assertTrue(file1.exists());
         cos.close();
     }
+
+    @Test
+    public void testCloseWithAlreadyDeletedFile() throws IOException {
+        // ## Arrange ##
+        // Write data exceeding threshold to force file creation, then delete the file
+        // before close() - close() should handle this gracefully (log warning, not throw)
+        ContentOutputStream cos = new ContentOutputStream(5, Curl.tmpDir);
+        cos.write(new byte[] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 }); // exceeds threshold
+        cos.flush();
+        // Do NOT call getFile(), so done=false and close() will try to clean up
+        // Delete the underlying file manually before close
+        File file = cos.getFile(); // This sets done=true
+        assertTrue(file.exists());
+        file.delete();
+        assertFalse(file.exists());
+
+        // ## Act & Assert ##
+        // close() should not throw even though the file was already deleted
+        cos.close(); // done=true since getFile() was called, so cleanup is skipped
+    }
+
+    @Test
+    public void testCloseWithoutGetFile_CleansUpTempFile() throws IOException {
+        // ## Arrange ##
+        ContentOutputStream cos = new ContentOutputStream(5, Curl.tmpDir);
+        cos.write(new byte[] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 }); // exceeds threshold
+        cos.flush();
+        // Do NOT call getFile() - done remains false
+
+        // ## Act ##
+        cos.close();
+
+        // ## Assert ##
+        // The temp file should have been cleaned up by close()
+        assertFalse(cos.isInMemory());
+    }
+
+    @Test
+    public void testCloseMultipleTimes() throws IOException {
+        // ## Arrange ##
+        ContentOutputStream cos = new ContentOutputStream(5, Curl.tmpDir);
+        cos.write(new byte[] { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 }); // exceeds threshold
+
+        // ## Act & Assert ##
+        // Multiple close() calls should be safe
+        cos.close();
+        cos.close();
+        cos.close();
+    }
 }

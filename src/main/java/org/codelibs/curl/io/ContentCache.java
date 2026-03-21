@@ -108,6 +108,30 @@ public class ContentCache implements Closeable {
         this.file = file;
     }
 
+    /**
+     * Returns whether the content is cached in memory.
+     *
+     * @return true if the content is in memory, false if it is in a file
+     */
+    public boolean isInMemory() {
+        return data != null;
+    }
+
+    /**
+     * Returns the content as a byte array.
+     * If the content is cached in memory, a clone of the data is returned.
+     * If the content is cached in a file, the file contents are read.
+     *
+     * @return the content as a byte array
+     * @throws IOException if an I/O error occurs while reading the file
+     */
+    public byte[] getContentAsBytes() throws IOException {
+        if (data != null) {
+            return data.clone();
+        }
+        return Files.readAllBytes(file.toPath());
+    }
+
     @Override
     public void close() throws IOException {
         if (file != null) {

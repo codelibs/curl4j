@@ -337,4 +337,167 @@ public class ContentCacheTest {
             assertEquals(", World!", new String(remaining, 0, remainingBytes, "UTF-8"));
         }
     }
+
+    // --- isInMemory() tests ---
+
+    @Test
+    public void testIsInMemory_WithByteArray() {
+        // ## Arrange ##
+        ContentCache cache = new ContentCache("test".getBytes());
+
+        // ## Assert ##
+        assertTrue(cache.isInMemory());
+    }
+
+    @Test
+    public void testIsInMemory_WithFile() throws IOException {
+        // ## Arrange ##
+        File tmpFile = File.createTempFile("cache-test-", ".tmp");
+        tmpFile.deleteOnExit();
+        ContentCache cache = new ContentCache(tmpFile);
+
+        // ## Assert ##
+        assertFalse(cache.isInMemory());
+    }
+
+    // --- getContentAsBytes() tests ---
+
+    @Test
+    public void testGetContentAsBytes_InMemory() throws IOException {
+        // ## Arrange ##
+        String content = "Hello, World!";
+        byte[] data = content.getBytes("UTF-8");
+        ContentCache cache = new ContentCache(data);
+
+        // ## Act ##
+        byte[] result = cache.getContentAsBytes();
+
+        // ## Assert ##
+        assertArrayEquals(data, result);
+    }
+
+    @Test
+    public void testGetContentAsBytes_InMemory_DefensiveCopy() throws IOException {
+        // ## Arrange ##
+        byte[] data = "original".getBytes("UTF-8");
+        ContentCache cache = new ContentCache(data);
+
+        // ## Act ##
+        byte[] result = cache.getContentAsBytes();
+        result[0] = 'X';
+
+        // ## Assert ##
+        byte[] secondResult = cache.getContentAsBytes();
+        assertArrayEquals("original".getBytes("UTF-8"), secondResult);
+    }
+
+    @Test
+    public void testGetContentAsBytes_FromFile() throws IOException {
+        // ## Arrange ##
+        File tmpFile = File.createTempFile("cache-test-", ".tmp");
+        tmpFile.deleteOnExit();
+        String content = "File content here";
+        java.nio.file.Files.write(tmpFile.toPath(), content.getBytes("UTF-8"));
+        ContentCache cache = new ContentCache(tmpFile);
+
+        // ## Act ##
+        byte[] result = cache.getContentAsBytes();
+
+        // ## Assert ##
+        assertEquals(content, new String(result, "UTF-8"));
+    }
+
+    @Test
+    public void testGetContentAsBytes_EmptyData() throws IOException {
+        // ## Arrange ##
+        ContentCache cache = new ContentCache(new byte[0]);
+
+        // ## Act ##
+        byte[] result = cache.getContentAsBytes();
+
+        // ## Assert ##
+        assertEquals(0, result.length);
+    }
+
+    @Test
+    public void testGetContentAsBytes_EmptyFile() throws IOException {
+        // ## Arrange ##
+        File tmpFile = File.createTempFile("cache-test-", ".tmp");
+        tmpFile.deleteOnExit();
+        ContentCache cache = new ContentCache(tmpFile);
+
+        // ## Act ##
+        byte[] result = cache.getContentAsBytes();
+
+        // ## Assert ##
+        assertEquals(0, result.length);
+    }
+
+    @Test
+    public void testGetContentAsBytes_LargeData() throws IOException {
+        // ## Arrange ##
+        byte[] data = new byte[1024 * 1024]; // 1MB
+        for (int i = 0; i < data.length; i++) {
+            data[i] = (byte) (i % 256);
+        }
+        ContentCache cache = new ContentCache(data);
+
+        // ## Act ##
+        byte[] result = cache.getContentAsBytes();
+
+        // ## Assert ##
+        assertArrayEquals(data, result);
+    }
+
+    @Test
+    public void testGetContentAsBytes_BinaryData() throws IOException {
+        // ## Arrange ##
+        byte[] data = new byte[256];
+        for (int i = 0; i < 256; i++) {
+            data[i] = (byte) i;
+        }
+        ContentCache cache = new ContentCache(data);
+
+        // ## Act ##
+        byte[] result = cache.getContentAsBytes();
+
+        // ## Assert ##
+        assertArrayEquals(data, result);
+    }
+
+    @Test
+    public void testGetContentAsBytes_FromFile_Unicode() throws IOException {
+        // ## Arrange ##
+        File tmpFile = File.createTempFile("cache-test-", ".tmp");
+        tmpFile.deleteOnExit();
+        String content = "日本語テスト Unicode content 🎉";
+        java.nio.file.Files.write(tmpFile.toPath(), content.getBytes("UTF-8"));
+        ContentCache cache = new ContentCache(tmpFile);
+
+        // ## Act ##
+        byte[] result = cache.getContentAsBytes();
+
+        // ## Assert ##
+        assertEquals(content, new String(result, "UTF-8"));
+    }
+
+    @Test
+    public void testGetContentAsBytes_MultipleCallsConsistent() throws IOException {
+        // ## Arrange ##
+        byte[] data = "consistent data".getBytes("UTF-8");
+        ContentCache cache = new ContentCache(data);
+
+        // ## Act & Assert ##
+        assertArrayEquals(cache.getContentAsBytes(), cache.getContentAsBytes());
+        assertArrayEquals(cache.getContentAsBytes(), cache.getContentAsBytes());
+    }
+
+    @Test
+    public void testIsInMemory_WithEmptyByteArray() {
+        // ## Arrange ##
+        ContentCache cache = new ContentCache(new byte[0]);
+
+        // ## Assert ##
+        assertTrue(cache.isInMemory());
+    }
 }

@@ -15,8 +15,6 @@
  */
 package org.codelibs.curl;
 
-import java.io.BufferedInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
@@ -96,17 +94,14 @@ public class CurlResponse implements Closeable {
      * @throws CurlException if an error occurs while accessing the content.
      */
     public String getContentAsString() {
-        final byte[] bytes = new byte[4096];
-        try (BufferedInputStream bis = new BufferedInputStream(getContentAsStream());
-                ByteArrayOutputStream baos = new ByteArrayOutputStream()) {
-            int length = bis.read(bytes);
-            while (length != -1) {
-                if (length != 0) {
-                    baos.write(bytes, 0, length);
-                }
-                length = bis.read(bytes);
+        if (contentCache == null) {
+            if (contentException != null) {
+                throw new CurlException("Failed to access the content.", contentException);
             }
-            return baos.toString(encoding);
+            throw new CurlException("Failed to access the content.");
+        }
+        try {
+            return new String(contentCache.getContentAsBytes(), encoding);
         } catch (final Exception e) {
             throw new CurlException("Failed to access the content.", e);
         }

@@ -126,6 +126,16 @@ public class CurlRequest {
     private BiConsumer<CurlRequest, HttpURLConnection> connectionBuilder;
 
     /**
+     * The connection timeout in milliseconds. A value of -1 means not set.
+     */
+    protected int connectTimeout = -1;
+
+    /**
+     * The read timeout in milliseconds. A value of -1 means not set.
+     */
+    protected int readTimeout = -1;
+
+    /**
      * Constructs a new CurlRequest with the specified HTTP method.
      *
      * @param method the HTTP method
@@ -368,9 +378,16 @@ public class CurlRequest {
             HttpURLConnection connection = null;
             try {
                 logger.fine(() -> ">>> " + method + " " + finalUrl);
+                @SuppressWarnings("deprecation")
                 final URL u = new URL(finalUrl);
                 connection = open(u);
                 connection.setRequestMethod(method.toString());
+                if (connectTimeout >= 0) {
+                    connection.setConnectTimeout(connectTimeout);
+                }
+                if (readTimeout >= 0) {
+                    connection.setReadTimeout(readTimeout);
+                }
                 if (headerList != null) {
                     for (final String[] values : headerList) {
                         logger.fine(() -> ">>> " + values[0] + "=" + values[1]);
@@ -496,6 +513,19 @@ public class CurlRequest {
     }
 
     /**
+     * Sets the connection and read timeouts for the request.
+     *
+     * @param connectTimeout the connection timeout in milliseconds
+     * @param readTimeout the read timeout in milliseconds
+     * @return this CurlRequest instance
+     */
+    public CurlRequest timeout(final int connectTimeout, final int readTimeout) {
+        this.connectTimeout = connectTimeout;
+        this.readTimeout = readTimeout;
+        return this;
+    }
+
+    /**
      * The RequestProcessor class processes the HTTP request and handles the response.
      */
     public static class RequestProcessor implements Consumer<HttpURLConnection> {
@@ -544,19 +574,23 @@ public class CurlRequest {
             }
             writeContent(() -> {
                 try {
-                    if (con.getResponseCode() < 400) {
+                    if (Method.HEAD.toString().equalsIgnoreCase(con.getRequestMethod())) {
+                        return new ByteArrayInputStream(new byte[0]);
+                    } else if (con.getResponseCode() < 400) {
                         if (GZIP.equals(con.getContentEncoding())) {
                             return new GZIPInputStream(con.getInputStream());
                         } else {
                             return con.getInputStream();
                         }
-                    } else if (Method.HEAD.toString().equalsIgnoreCase(con.getRequestMethod())) {
-                        return new ByteArrayInputStream(new byte[0]);
                     } else {
+                        final InputStream errorStream = con.getErrorStream();
+                        if (errorStream == null) {
+                            return new ByteArrayInputStream(new byte[0]);
+                        }
                         if (GZIP.equals(con.getContentEncoding())) {
-                            return new GZIPInputStream(con.getErrorStream());
+                            return new GZIPInputStream(errorStream);
                         } else {
-                            return con.getErrorStream();
+                            return errorStream;
                         }
                     }
                 } catch (IOException e) {

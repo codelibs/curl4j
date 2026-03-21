@@ -631,4 +631,152 @@ public class CurlRequestTest {
         assertEquals("TRACE", Method.TRACE.toString());
         assertEquals("CONNECT", Method.CONNECT.toString());
     }
+
+    // --- URL with special characters tests ---
+
+    @Test
+    public void test_UrlWithSpaces() {
+        // ## Arrange ##
+        // URLs with spaces should be accepted (HttpURLConnection is lenient)
+        final CurlRequest request = new CurlRequest(Method.GET, "http://example.com/path with spaces");
+
+        // ## Assert ##
+        assertNotNull(request);
+        assertEquals(Method.GET, request.method());
+    }
+
+    @Test
+    public void test_UrlWithCurlyBraces() {
+        // ## Arrange ##
+        // URLs with curly braces (e.g., OpenSearch) should be accepted
+        final CurlRequest request = new CurlRequest(Method.GET, "http://localhost:9200/{index}/_search");
+
+        // ## Assert ##
+        assertNotNull(request);
+    }
+
+    @Test
+    public void test_UrlWithPipe() {
+        // ## Arrange ##
+        final CurlRequest request = new CurlRequest(Method.GET, "http://example.com/path?q=a|b");
+
+        // ## Assert ##
+        assertNotNull(request);
+    }
+
+    @Test
+    public void test_UrlWithUnicode() {
+        // ## Arrange ##
+        final CurlRequest request = new CurlRequest(Method.GET, "http://example.com/日本語パス");
+
+        // ## Assert ##
+        assertNotNull(request);
+    }
+
+    @Test
+    public void test_UrlWithFragment() {
+        // ## Arrange ##
+        final CurlRequest request = new CurlRequest(Method.GET, "http://example.com/page#section");
+
+        // ## Assert ##
+        assertNotNull(request);
+    }
+
+    @Test
+    public void test_UrlWithPort() {
+        // ## Arrange ##
+        final CurlRequest request = new CurlRequest(Method.GET, "http://localhost:9200/_cluster/health");
+
+        // ## Assert ##
+        assertNotNull(request);
+    }
+
+    @Test
+    public void test_UrlWithAuthentication() {
+        // ## Arrange ##
+        final CurlRequest request = new CurlRequest(Method.GET, "http://user:pass@example.com/path");
+
+        // ## Assert ##
+        assertNotNull(request);
+    }
+
+    // --- Timeout API tests ---
+
+    @Test
+    public void test_TimeoutDefaults() {
+        // ## Arrange ##
+        final CurlRequest request = new CurlRequest(Method.GET, "http://example.com");
+
+        // ## Assert ##
+        // Default timeout values should be -1 (not set)
+        assertEquals(-1, request.connectTimeout);
+        assertEquals(-1, request.readTimeout);
+    }
+
+    @Test
+    public void test_TimeoutSetsValues() {
+        // ## Arrange ##
+        final CurlRequest request = new CurlRequest(Method.GET, "http://example.com");
+
+        // ## Act ##
+        final CurlRequest result = request.timeout(5000, 10000);
+
+        // ## Assert ##
+        assertSame(request, result);
+        assertEquals(5000, request.connectTimeout);
+        assertEquals(10000, request.readTimeout);
+    }
+
+    @Test
+    public void test_TimeoutZeroValues() {
+        // ## Arrange ##
+        final CurlRequest request = new CurlRequest(Method.GET, "http://example.com");
+
+        // ## Act ##
+        request.timeout(0, 0);
+
+        // ## Assert ##
+        assertEquals(0, request.connectTimeout);
+        assertEquals(0, request.readTimeout);
+    }
+
+    @Test
+    public void test_TimeoutFluentChaining() {
+        // ## Arrange & Act ##
+        final CurlRequest request = new CurlRequest(Method.POST, "http://example.com").header("Content-Type", "application/json")
+                .timeout(3000, 5000).body("{\"key\":\"value\"}");
+
+        // ## Assert ##
+        assertEquals(3000, request.connectTimeout);
+        assertEquals(5000, request.readTimeout);
+        assertNotNull(request.body());
+    }
+
+    @Test
+    public void test_TimeoutNegativeValues() {
+        // ## Arrange ##
+        final CurlRequest request = new CurlRequest(Method.GET, "http://example.com");
+
+        // ## Act ##
+        request.timeout(-2, -3);
+
+        // ## Assert ##
+        // Any negative value should be accepted (treated as "not set" in connect())
+        assertEquals(-2, request.connectTimeout);
+        assertEquals(-3, request.readTimeout);
+    }
+
+    @Test
+    public void test_TimeoutOverwrite() {
+        // ## Arrange ##
+        final CurlRequest request = new CurlRequest(Method.GET, "http://example.com");
+
+        // ## Act ##
+        request.timeout(1000, 2000);
+        request.timeout(3000, 4000);
+
+        // ## Assert ##
+        assertEquals(3000, request.connectTimeout);
+        assertEquals(4000, request.readTimeout);
+    }
 }

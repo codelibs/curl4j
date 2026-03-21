@@ -253,11 +253,7 @@ public class CurlResponseTest {
             fail("Expected CurlException");
         } catch (CurlException e) {
             assertTrue(e.getMessage().contains("Failed to access the content"));
-            // The cause should be another CurlException from getContentAsStream()
-            assertTrue(e.getCause() instanceof CurlException);
-            CurlException innerException = (CurlException) e.getCause();
-            assertTrue(innerException.getMessage().contains("The content does not exist"));
-            assertSame(exception, innerException.getCause());
+            assertSame(exception, e.getCause());
         }
     }
 
@@ -359,5 +355,170 @@ public class CurlResponseTest {
 
         assertEquals("gzip", response.getHeaderValue("Accept-Encoding"));
         assertEquals("gzip", response.getHeaderValue("ACCEPT-ENCODING"));
+    }
+
+    // --- getContentAsString() optimization tests ---
+
+    @Test
+    public void test_GetContentAsString_InMemoryCache() {
+        // ## Arrange ##
+        String content = "Hello, World!";
+        CurlResponse response = new CurlResponse();
+        response.setEncoding("UTF-8");
+        response.setContentCache(new ContentCache(content.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+
+        // ## Act ##
+        String result = response.getContentAsString();
+
+        // ## Assert ##
+        assertEquals(content, result);
+    }
+
+    @Test
+    public void test_GetContentAsString_WithDifferentEncoding() {
+        // ## Arrange ##
+        String content = "ISO-8859-1 content";
+        CurlResponse response = new CurlResponse();
+        response.setEncoding("ISO-8859-1");
+        response.setContentCache(new ContentCache(content.getBytes(java.nio.charset.StandardCharsets.ISO_8859_1)));
+
+        // ## Act ##
+        String result = response.getContentAsString();
+
+        // ## Assert ##
+        assertEquals(content, result);
+    }
+
+    @Test
+    public void test_GetContentAsString_NullCache_ThrowsException() {
+        // ## Arrange ##
+        CurlResponse response = new CurlResponse();
+        response.setEncoding("UTF-8");
+
+        // ## Act & Assert ##
+        try {
+            response.getContentAsString();
+            fail("Expected CurlException");
+        } catch (CurlException e) {
+            assertEquals("Failed to access the content.", e.getMessage());
+        }
+    }
+
+    @Test
+    public void test_GetContentAsString_NullCache_WithContentException() {
+        // ## Arrange ##
+        CurlResponse response = new CurlResponse();
+        response.setEncoding("UTF-8");
+        response.setContentException(new IOException("test error"));
+
+        // ## Act & Assert ##
+        try {
+            response.getContentAsString();
+            fail("Expected CurlException");
+        } catch (CurlException e) {
+            assertEquals("Failed to access the content.", e.getMessage());
+            assertNotNull(e.getCause());
+        }
+    }
+
+    @Test
+    public void test_GetContentAsString_EmptyContent() {
+        // ## Arrange ##
+        CurlResponse response = new CurlResponse();
+        response.setEncoding("UTF-8");
+        response.setContentCache(new ContentCache(new byte[0]));
+
+        // ## Act ##
+        String result = response.getContentAsString();
+
+        // ## Assert ##
+        assertEquals("", result);
+    }
+
+    @Test
+    public void test_GetContentAsString_UnicodeContent() {
+        // ## Arrange ##
+        String content = "日本語テスト 🎉";
+        CurlResponse response = new CurlResponse();
+        response.setEncoding("UTF-8");
+        response.setContentCache(new ContentCache(content.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+
+        // ## Act ##
+        String result = response.getContentAsString();
+
+        // ## Assert ##
+        assertEquals(content, result);
+    }
+
+    @Test
+    public void test_GetContentAsString_FileBasedCache() throws IOException {
+        // ## Arrange ##
+        String content = "File-based content test";
+        java.io.File tmpFile = java.io.File.createTempFile("response-test-", ".tmp");
+        tmpFile.deleteOnExit();
+        java.nio.file.Files.write(tmpFile.toPath(), content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        CurlResponse response = new CurlResponse();
+        response.setEncoding("UTF-8");
+        response.setContentCache(new ContentCache(tmpFile));
+
+        // ## Act ##
+        String result = response.getContentAsString();
+
+        // ## Assert ##
+        assertEquals(content, result);
+    }
+
+    @Test
+    public void test_GetContentAsString_LargeContent() {
+        // ## Arrange ##
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 10000; i++) {
+            sb.append("Line ").append(i).append(": This is a test line with some content.\n");
+        }
+        String content = sb.toString();
+        CurlResponse response = new CurlResponse();
+        response.setEncoding("UTF-8");
+        response.setContentCache(new ContentCache(content.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+
+        // ## Act ##
+        String result = response.getContentAsString();
+
+        // ## Assert ##
+        assertEquals(content, result);
+    }
+
+    @Test
+    public void test_GetContentAsString_MultipleCallsConsistent() {
+        // ## Arrange ##
+        String content = "consistent content";
+        CurlResponse response = new CurlResponse();
+        response.setEncoding("UTF-8");
+        response.setContentCache(new ContentCache(content.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+
+        // ## Act & Assert ##
+        assertEquals(content, response.getContentAsString());
+        assertEquals(content, response.getContentAsString());
+    }
+
+    @Test
+    public void test_GetContentAsStream_AfterGetContentAsString() throws IOException {
+        // ## Arrange ##
+        String content = "stream after string";
+        CurlResponse response = new CurlResponse();
+        response.setEncoding("UTF-8");
+        response.setContentCache(new ContentCache(content.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+
+        // ## Act ##
+        String str = response.getContentAsString();
+        try (InputStream stream = response.getContentAsStream()) {
+            byte[] buffer = new byte[1024];
+            int bytesRead = stream.read(buffer);
+            String fromStream = new String(buffer, 0, bytesRead, "UTF-8");
+
+            // ## Assert ##
+            assertEquals(content, str);
+            assertEquals(content, fromStream);
+        }
     }
 }

@@ -648,7 +648,8 @@ public class IOIntegrationTest {
         // ## Arrange ##
         String originalBody = "Hello, GZIP world!";
         byte[] gzipped = gzipCompress(originalBody);
-        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy", u -> new GzipSuccessMockHttpURLConnection(u, gzipped));
+        CurlRequest req =
+                new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy", u -> new GzipSuccessMockHttpURLConnection(u, gzipped));
 
         // ## Act ##
         try (CurlResponse response = req.execute()) {
@@ -874,8 +875,8 @@ public class IOIntegrationTest {
     public void test_SynchronousExecute_ReturnsResponse() throws Exception {
         // ## Arrange ##
         String body = "sync response body";
-        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy",
-                u -> new OutputCapturingMockHttpURLConnection(u, body));
+        CurlRequest req =
+                new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy", u -> new OutputCapturingMockHttpURLConnection(u, body));
 
         // ## Act ##
         try (CurlResponse response = req.execute()) {
@@ -888,8 +889,8 @@ public class IOIntegrationTest {
     @Test
     public void test_SynchronousExecute_RestoresThreadPool() throws Exception {
         // ## Arrange ##
-        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy",
-                u -> new OutputCapturingMockHttpURLConnection(u, "ok"));
+        CurlRequest req =
+                new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy", u -> new OutputCapturingMockHttpURLConnection(u, "ok"));
         ForkJoinPool pool = new ForkJoinPool(1);
         req.threadPool(pool);
 
@@ -904,8 +905,8 @@ public class IOIntegrationTest {
         // We verify by running async execute which should use the pool
         CountDownLatch latch = new CountDownLatch(1);
         AtomicReference<String> threadName = new AtomicReference<>();
-        CurlRequest req2 = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy",
-                u -> new OutputCapturingMockHttpURLConnection(u, "ok"));
+        CurlRequest req2 =
+                new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy", u -> new OutputCapturingMockHttpURLConnection(u, "ok"));
         req2.threadPool(pool);
         req2.execute(response -> {
             threadName.set(Thread.currentThread().getName());
@@ -921,8 +922,8 @@ public class IOIntegrationTest {
     public void test_ExecuteWithListeners_Success() throws Exception {
         // ## Arrange ##
         String body = "listener response";
-        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy",
-                u -> new OutputCapturingMockHttpURLConnection(u, body));
+        CurlRequest req =
+                new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy", u -> new OutputCapturingMockHttpURLConnection(u, body));
         AtomicReference<String> receivedBody = new AtomicReference<>();
         AtomicInteger statusCode = new AtomicInteger();
 
@@ -1079,8 +1080,8 @@ public class IOIntegrationTest {
     public void test_LargeResponse_UsesFileBasedCache() throws Exception {
         // ## Arrange ##
         int responseSize = 2 * 1024 * 1024; // 2MB, exceeds default 1MB threshold
-        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy",
-                u -> new LargeResponseMockHttpURLConnection(u, responseSize));
+        CurlRequest req =
+                new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy", u -> new LargeResponseMockHttpURLConnection(u, responseSize));
 
         long tmpFilesBefore = countTmpFiles();
 
@@ -1105,8 +1106,8 @@ public class IOIntegrationTest {
     public void test_SmallThresholdResponse_UsesFileBasedCache() throws Exception {
         // ## Arrange ##
         String body = "small body but threshold is 0";
-        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy",
-                u -> new OutputCapturingMockHttpURLConnection(u, body));
+        CurlRequest req =
+                new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy", u -> new OutputCapturingMockHttpURLConnection(u, body));
         req.threshold(0); // Force file-based caching
 
         long tmpFilesBefore = countTmpFiles();
@@ -1286,8 +1287,7 @@ public class IOIntegrationTest {
         // ## Arrange ##
         AtomicReference<CurlRequest> receivedRequest = new AtomicReference<>();
         AtomicReference<HttpURLConnection> receivedConnection = new AtomicReference<>();
-        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy",
-                u -> new TimeoutRecordingMockHttpURLConnection(u));
+        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy", u -> new TimeoutRecordingMockHttpURLConnection(u));
         req.onConnect((r, conn) -> {
             receivedRequest.set(r);
             receivedConnection.set(conn);

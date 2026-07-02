@@ -29,6 +29,8 @@ import java.util.logging.Logger;
 import org.codelibs.curl.Curl.Method;
 import org.junit.Test;
 
+// Curl.connect(String) is intentionally deprecated (see Curl.java); these tests still exercise it.
+@SuppressWarnings("deprecation")
 public class CurlTest {
     private static final Logger logger = Logger.getLogger(CurlTest.class.getName());
 

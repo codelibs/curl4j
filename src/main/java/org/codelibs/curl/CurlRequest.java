@@ -27,8 +27,11 @@ import java.net.HttpURLConnection;
 import java.net.Proxy;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.nio.charset.Charset;
+import java.nio.charset.IllegalCharsetNameException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ForkJoinPool;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -153,10 +156,13 @@ public class CurlRequest {
      *
      * @param method the HTTP method
      * @param url the URL
-     * @throws IllegalArgumentException if method is null
+     * @throws IllegalArgumentException if method or url is null
      */
     public CurlRequest(final Method method, final String url) {
         this(method);
+        if (url == null) {
+            throw new IllegalArgumentException("url must not be null");
+        }
         this.url = url;
     }
 
@@ -281,7 +287,7 @@ public class CurlRequest {
      * @throws CurlException if the body method is already called
      */
     public CurlRequest body(final String body) {
-        if (bodyStream != null) {
+        if (this.body != null || bodyStream != null) {
             throw new CurlException("body method is already called.");
         }
         this.body = body;
@@ -296,7 +302,7 @@ public class CurlRequest {
      * @throws CurlException if the body method is already called
      */
     public CurlRequest body(final InputStream stream) {
-        if (body != null) {
+        if (body != null || bodyStream != null) {
             throw new CurlException("body method is already called.");
         }
         this.bodyStream = stream;
@@ -350,33 +356,57 @@ public class CurlRequest {
     /**
      * Connects to the URL and executes the request.
      *
+     * <p>If a thread pool has been configured via {@link #threadPool(ForkJoinPool)}, the request
+     * runs asynchronously on that pool; otherwise it runs synchronously on the calling thread.</p>
+     *
      * @param actionListener the action listener for handling the response
      * @param exceptionListener the exception listener for handling exceptions
      */
     public void connect(final Consumer<HttpURLConnection> actionListener, final Consumer<Exception> exceptionListener) {
-        final Runnable task = () -> {
-            final String finalUrl;
-            if (paramList != null) {
-                char sp;
-                if (url.indexOf('?') == -1) {
-                    sp = '?';
-                } else {
-                    sp = '&';
-                }
-                final StringBuilder urlBuf = new StringBuilder(100);
-                for (final String param : paramList) {
-                    urlBuf.append(sp).append(param);
-                    if (sp == '?') {
-                        sp = '&';
-                    }
-                }
-                finalUrl = url + urlBuf.toString();
-            } else {
-                finalUrl = url;
-            }
+        connect(actionListener, exceptionListener, false);
+    }
 
+    /**
+     * Connects to the URL and executes the request, optionally forcing synchronous execution.
+     *
+     * @param actionListener the action listener for handling the response
+     * @param exceptionListener the exception listener for handling exceptions
+     * @param forceSync if {@code true}, the request always runs synchronously on the calling
+     *            thread even when a thread pool has been configured; if {@code false}, the
+     *            configured thread pool is used when present
+     */
+    private void connect(final Consumer<HttpURLConnection> actionListener, final Consumer<Exception> exceptionListener,
+            final boolean forceSync) {
+        final Runnable task = () -> {
+            String targetUrl = url;
             HttpURLConnection connection = null;
             try {
+                final String finalUrl;
+                if (paramList != null) {
+                    final StringBuilder urlBuf = new StringBuilder(100);
+                    char sp;
+                    final char lastChar = url.isEmpty() ? '\0' : url.charAt(url.length() - 1);
+                    if (lastChar == '?' || lastChar == '&') {
+                        // The URL already ends with a separator, so the first parameter needs none.
+                        sp = '\0';
+                    } else if (url.indexOf('?') == -1) {
+                        sp = '?';
+                    } else {
+                        sp = '&';
+                    }
+                    for (final String param : paramList) {
+                        if (sp != '\0') {
+                            urlBuf.append(sp);
+                        }
+                        urlBuf.append(param);
+                        sp = '&';
+                    }
+                    finalUrl = url + urlBuf.toString();
+                } else {
+                    finalUrl = url;
+                }
+                targetUrl = finalUrl;
+
                 logger.fine(() -> ">>> " + method + " " + finalUrl);
                 @SuppressWarnings("deprecation")
                 final URL u = new URL(finalUrl);
@@ -390,7 +420,7 @@ public class CurlRequest {
                 }
                 if (headerList != null) {
                     for (final String[] values : headerList) {
-                        logger.fine(() -> ">>> " + values[0] + "=" + values[1]);
+                        logger.fine(() -> ">>> " + values[0] + "=" + maskSensitiveHeader(values[0], values[1]));
                         connection.addRequestProperty(values[0], values[1]);
                     }
                 }
@@ -420,18 +450,61 @@ public class CurlRequest {
 
                 actionListener.accept(connection);
             } catch (final Exception e) {
-                exceptionListener.accept(new CurlException("Failed to access to " + finalUrl, e));
+                exceptionListener.accept(new CurlException("Failed to access to " + targetUrl, e));
             } finally {
                 if (connection != null) {
                     connection.disconnect();
                 }
             }
         };
-        if (threadPool != null) {
+        if (!forceSync && threadPool != null) {
             threadPool.execute(task);
         } else {
             task.run();
         }
+    }
+
+    /**
+     * Masks the value of sensitive request headers so that credentials are not written to logs.
+     *
+     * <p>The value is replaced with {@code ***} for the following header names (case-insensitive):
+     * {@code Authorization}, {@code Proxy-Authorization}, {@code Cookie} and {@code Set-Cookie}.
+     * All other header values are returned unchanged.</p>
+     *
+     * @param key the header name
+     * @param value the header value
+     * @return the masked value for sensitive headers, otherwise the original value
+     */
+    protected static String maskSensitiveHeader(final String key, final String value) {
+        if (key != null) {
+            switch (key.toLowerCase(Locale.ROOT)) {
+            case "authorization":
+            case "proxy-authorization":
+            case "cookie":
+            case "set-cookie":
+                return "***";
+            default:
+                break;
+            }
+        }
+        return value;
+    }
+
+    /**
+     * Determines whether the given content encoding denotes GZIP compression.
+     *
+     * <p>Both {@code gzip} and {@code x-gzip} are recognized, case-insensitively and ignoring
+     * surrounding whitespace.</p>
+     *
+     * @param encoding the content encoding value, may be {@code null}
+     * @return {@code true} if the encoding denotes GZIP, otherwise {@code false}
+     */
+    protected static boolean isGzipEncoding(final String encoding) {
+        if (encoding == null) {
+            return false;
+        }
+        final String trimmed = encoding.trim();
+        return GZIP.equalsIgnoreCase(trimmed) || "x-gzip".equalsIgnoreCase(trimmed);
     }
 
     /**
@@ -473,17 +546,11 @@ public class CurlRequest {
      * @return the CurlResponse
      */
     public CurlResponse execute() {
-        final ForkJoinPool originalThreadPool = this.threadPool;
-        try {
-            this.threadPool = null;
-            final RequestProcessor processor = new RequestProcessor(encoding, threshold);
-            connect(processor, e -> {
-                throw new CurlException("Failed to process a request.", e);
-            });
-            return processor.getResponse();
-        } finally {
-            this.threadPool = originalThreadPool;
-        }
+        final RequestProcessor processor = new RequestProcessor(encoding, threshold);
+        connect(processor, e -> {
+            throw new CurlException("Failed to process a request.", e);
+        }, true);
+        return processor.getResponse();
     }
 
     /**
@@ -515,6 +582,9 @@ public class CurlRequest {
     /**
      * Sets the connection and read timeouts for the request.
      *
+     * <p>When {@code timeout()} is not called, the JDK defaults apply ({@code 0}, meaning no
+     * timeout), so a request may block indefinitely while connecting or reading.</p>
+     *
      * @param connectTimeout the connection timeout in milliseconds
      * @param readTimeout the read timeout in milliseconds
      * @return this CurlRequest instance
@@ -534,7 +604,7 @@ public class CurlRequest {
          */
         protected CurlResponse response = new CurlResponse();
 
-        private final String encoding;
+        private String encoding;
 
         private int threshold;
 
@@ -566,6 +636,12 @@ public class CurlRequest {
         @Override
         public void accept(final HttpURLConnection con) {
             try {
+                // Prefer the charset declared by the response Content-Type; fall back to the
+                // request-side encoding when it is absent or unsupported.
+                final String responseCharset = parseCharset(con.getContentType());
+                if (responseCharset != null) {
+                    encoding = responseCharset;
+                }
                 response.setEncoding(encoding);
                 response.setHttpStatusCode(con.getResponseCode());
                 response.setHeaders(con.getHeaderFields());
@@ -577,7 +653,7 @@ public class CurlRequest {
                     if (Method.HEAD.toString().equalsIgnoreCase(con.getRequestMethod())) {
                         return new ByteArrayInputStream(new byte[0]);
                     } else if (con.getResponseCode() < 400) {
-                        if (GZIP.equals(con.getContentEncoding())) {
+                        if (isGzipEncoding(con.getContentEncoding())) {
                             return new GZIPInputStream(con.getInputStream());
                         } else {
                             return con.getInputStream();
@@ -587,7 +663,7 @@ public class CurlRequest {
                         if (errorStream == null) {
                             return new ByteArrayInputStream(new byte[0]);
                         }
-                        if (GZIP.equals(con.getContentEncoding())) {
+                        if (isGzipEncoding(con.getContentEncoding())) {
                             return new GZIPInputStream(errorStream);
                         } else {
                             return errorStream;
@@ -597,6 +673,36 @@ public class CurlRequest {
                     throw new CurlException("Failed to process a request.", e);
                 }
             });
+        }
+
+        /**
+         * Parses the {@code charset} parameter from a response {@code Content-Type} header value.
+         *
+         * @param contentType the {@code Content-Type} header value, may be {@code null}
+         * @return the charset name if present and supported, otherwise {@code null}
+         */
+        private static String parseCharset(final String contentType) {
+            if (contentType == null) {
+                return null;
+            }
+            for (final String part : contentType.split(";")) {
+                final String token = part.trim();
+                if (token.regionMatches(true, 0, "charset=", 0, 8)) {
+                    String charset = token.substring(8).trim();
+                    if (charset.length() >= 2 && charset.charAt(0) == '"' && charset.charAt(charset.length() - 1) == '"') {
+                        charset = charset.substring(1, charset.length() - 1);
+                    }
+                    if (charset.isEmpty()) {
+                        return null;
+                    }
+                    try {
+                        return Charset.isSupported(charset) ? charset : null;
+                    } catch (final IllegalCharsetNameException e) {
+                        return null;
+                    }
+                }
+            }
+            return null;
         }
 
         /**

@@ -18,6 +18,7 @@ package org.codelibs.curl;
 import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -60,9 +61,10 @@ public class CurlResponse implements Closeable {
     private Exception contentException;
 
     /**
-     * The headers of the response.
+     * The headers of the response. Defaults to an empty immutable map so that
+     * {@link #getHeaders()} never returns {@code null}.
      */
-    private Map<String, List<String>> headers;
+    private Map<String, List<String>> headers = Collections.emptyMap();
 
     /**
      * Closes the content cache if it is not null.
@@ -205,7 +207,7 @@ public class CurlResponse implements Closeable {
     /**
      * Gets the headers of the response.
      *
-     * @return the headers.
+     * @return the headers; an empty immutable map if no headers have been set (never {@code null}).
      */
     public Map<String, List<String>> getHeaders() {
         return headers;

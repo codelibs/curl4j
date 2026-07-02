@@ -122,7 +122,14 @@ public class Curl {
      *
      * @param url the URL to connect to
      * @return a new CurlRequest object with the CONNECT method
+     * @deprecated {@link java.net.HttpURLConnection} does not support the {@code CONNECT} method,
+     *             so executing such a request always fails with a {@link CurlException} (the
+     *             underlying {@code setRequestMethod("CONNECT")} throws
+     *             {@link java.net.ProtocolException}). There is no replacement: the JDK performs
+     *             {@code CONNECT} tunneling internally when routing through an HTTP proxy, so the
+     *             method is never issued explicitly.
      */
+    @Deprecated
     public static CurlRequest connect(final String url) {
         return new CurlRequest(Method.CONNECT, url);
     }
@@ -181,6 +188,9 @@ public class Curl {
         TRACE,
         /**
          * HTTP CONNECT method.
+         *
+         * <p>Note: {@link java.net.HttpURLConnection} does not support this method, so a request
+         * that uses it always fails with a {@link CurlException}. See {@link Curl#connect(String)}.</p>
          */
         CONNECT;
     }

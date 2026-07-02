@@ -17,6 +17,7 @@ package org.codelibs.curl;
 
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
@@ -112,7 +113,10 @@ public class CurlResponseTest {
 
         response.setHeaders(null);
 
-        assertNull(response.getHeaders());
+        // getHeaders() never returns null; it defaults to an empty immutable map
+        Map<String, List<String>> result = response.getHeaders();
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
     }
 
     @Test
@@ -334,6 +338,23 @@ public class CurlResponseTest {
 
         // Should not throw exception
         response.close();
+    }
+
+    @Test
+    public void testDoubleCloseWithFileBasedCache() throws IOException {
+        // ## Arrange ##
+        java.io.File tmpFile = java.io.File.createTempFile("response-close-", ".tmp");
+        java.nio.file.Files.write(tmpFile.toPath(), "content".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        CurlResponse response = new CurlResponse();
+        response.setContentCache(new ContentCache(tmpFile));
+
+        // ## Act & Assert ##
+        // First close removes the backing file
+        response.close();
+        assertFalse(tmpFile.exists());
+        // Second close must not throw even though the file is already gone
+        response.close();
+        assertFalse(tmpFile.exists());
     }
 
     @Test

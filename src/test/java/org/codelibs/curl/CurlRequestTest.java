@@ -54,14 +54,13 @@ public class CurlRequestTest {
 
     @Test
     public void testConstructorWithNullUrl() {
-        // URL can be null with the two-argument constructor
-        CurlRequest request = new CurlRequest(Method.DELETE, null);
-
-        assertEquals(Method.DELETE, request.method());
-        assertEquals("UTF-8", request.encoding());
-        assertEquals(1024 * 1024, request.threshold());
-        assertNull(request.proxy());
-        assertNull(request.body());
+        // URL must not be null with the two-argument constructor
+        try {
+            new CurlRequest(Method.DELETE, null);
+            fail("Expected IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("url must not be null"));
+        }
     }
 
     @Test
@@ -216,6 +215,32 @@ public class CurlRequestTest {
         try {
             InputStream stream = new ByteArrayInputStream("test data".getBytes());
             request.body(stream);
+            fail("Expected CurlException");
+        } catch (CurlException e) {
+            assertTrue(e.getMessage().contains("body method is already called"));
+        }
+    }
+
+    @Test
+    public void testBodyStringCalledTwiceThrowsException() {
+        CurlRequest request = new CurlRequest(Method.POST, "https://example.com");
+        request.body("first body");
+
+        try {
+            request.body("second body");
+            fail("Expected CurlException");
+        } catch (CurlException e) {
+            assertTrue(e.getMessage().contains("body method is already called"));
+        }
+    }
+
+    @Test
+    public void testBodyStreamCalledTwiceThrowsException() {
+        CurlRequest request = new CurlRequest(Method.POST, "https://example.com");
+        request.body(new ByteArrayInputStream("first".getBytes()));
+
+        try {
+            request.body(new ByteArrayInputStream("second".getBytes()));
             fail("Expected CurlException");
         } catch (CurlException e) {
             assertTrue(e.getMessage().contains("body method is already called"));
@@ -778,5 +803,30 @@ public class CurlRequestTest {
         // ## Assert ##
         assertEquals(3000, request.connectTimeout);
         assertEquals(4000, request.readTimeout);
+    }
+
+    // --- maskSensitiveHeader tests ---
+
+    @Test
+    public void testMaskSensitiveHeaderMasksSensitiveKeys() {
+        // Sensitive header values are masked, case-insensitively by header name
+        assertEquals("***", CurlRequest.maskSensitiveHeader("Authorization", "Bearer secret-token"));
+        assertEquals("***", CurlRequest.maskSensitiveHeader("authorization", "Basic abc123"));
+        assertEquals("***", CurlRequest.maskSensitiveHeader("Proxy-Authorization", "Basic xyz"));
+        assertEquals("***", CurlRequest.maskSensitiveHeader("Cookie", "session=abc"));
+        assertEquals("***", CurlRequest.maskSensitiveHeader("SET-COOKIE", "session=abc"));
+    }
+
+    @Test
+    public void testMaskSensitiveHeaderKeepsNonSensitiveKeys() {
+        // Non-sensitive header values are returned unchanged
+        assertEquals("application/json", CurlRequest.maskSensitiveHeader("Content-Type", "application/json"));
+        assertEquals("custom-value", CurlRequest.maskSensitiveHeader("X-Custom-Header", "custom-value"));
+    }
+
+    @Test
+    public void testMaskSensitiveHeaderWithNullKey() {
+        // A null key is treated as non-sensitive
+        assertEquals("value", CurlRequest.maskSensitiveHeader(null, "value"));
     }
 }

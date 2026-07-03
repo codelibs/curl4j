@@ -1042,6 +1042,44 @@ public class IOIntegrationTest {
         }
     }
 
+    @Test
+    public void test_ExplicitRequestEncoding_TakesPrecedenceOverResponseCharset() throws Exception {
+        // ## Arrange ##
+        // The caller explicitly set the encoding via encoding("Shift_JIS"). Even though the server
+        // declares a different charset (UTF-8), the caller's explicit choice must win so a
+        // mis-declaring server can still be overridden. The body is Shift_JIS-encoded.
+        String text = "こんにちは世界";
+        byte[] shiftJisBytes = text.getBytes("Shift_JIS");
+        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy",
+                u -> new ContentTypeCharsetMockHttpURLConnection(u, "text/html; charset=UTF-8", shiftJisBytes));
+        req.encoding("Shift_JIS");
+
+        // ## Act ##
+        try (CurlResponse response = req.execute()) {
+            // ## Assert ##
+            assertEquals("Shift_JIS", response.getEncoding());
+            assertEquals(text, response.getContentAsString());
+        }
+    }
+
+    @Test
+    public void test_ResponseContentTypeCharset_WithTrailingParameter_UsedForDecoding() throws Exception {
+        // ## Arrange ##
+        // charset is not the last parameter; the trailing "; boundary=xyz" must not be glued onto
+        // the charset value (guards against a naive indexOf-based parser).
+        String text = "こんにちは世界";
+        byte[] shiftJisBytes = text.getBytes("Shift_JIS");
+        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy",
+                u -> new ContentTypeCharsetMockHttpURLConnection(u, "text/html; charset=Shift_JIS; boundary=xyz", shiftJisBytes));
+
+        // ## Act ##
+        try (CurlResponse response = req.execute()) {
+            // ## Assert ##
+            assertEquals("Shift_JIS", response.getEncoding());
+            assertEquals(text, response.getContentAsString());
+        }
+    }
+
     // --- InputStream body writing test ---
 
     /**

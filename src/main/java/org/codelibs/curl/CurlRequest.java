@@ -79,6 +79,14 @@ public class CurlRequest {
     protected String encoding = "UTF-8";
 
     /**
+     * Whether {@link #encoding(String)} was explicitly called by the caller. When {@code true},
+     * the caller-supplied encoding takes precedence over any charset declared in the response
+     * {@code Content-Type}; when {@code false} (the default), the response charset is preferred
+     * and the request encoding is only used as a fallback.
+     */
+    protected boolean encodingSet = false;
+
+    /**
      * The threshold size for the request body.
      */
     protected int threshold = 1024 * 1024; // 1MB
@@ -225,6 +233,11 @@ public class CurlRequest {
     /**
      * Sets the character encoding for the request.
      *
+     * <p>Calling this method also marks the encoding as explicitly chosen: the response body is
+     * then decoded with this encoding even when the response {@code Content-Type} declares a
+     * different charset. When this method is not called, the default request encoding is only a
+     * fallback and the charset declared by the response takes precedence.</p>
+     *
      * @param encoding the encoding
      * @return this CurlRequest instance
      * @throws CurlException if the method is called after the param method
@@ -234,6 +247,7 @@ public class CurlRequest {
             throw new CurlException("This method must be called before param method.");
         }
         this.encoding = encoding;
+        this.encodingSet = true;
         return this;
     }
 
@@ -535,7 +549,7 @@ public class CurlRequest {
      */
     public void execute(final Consumer<CurlResponse> actionListener, final Consumer<Exception> exceptionListener) {
         connect(con -> {
-            final RequestProcessor processor = new RequestProcessor(encoding, threshold);
+            final RequestProcessor processor = new RequestProcessor(encoding, threshold, !encodingSet);
             processor.accept(con);
             try (final CurlResponse res = processor.getResponse()) {
                 actionListener.accept(res);
@@ -551,7 +565,7 @@ public class CurlRequest {
      * @return the CurlResponse
      */
     public CurlResponse execute() {
-        final RequestProcessor processor = new RequestProcessor(encoding, threshold);
+        final RequestProcessor processor = new RequestProcessor(encoding, threshold, !encodingSet);
         connect(processor, e -> {
             throw new CurlException("Failed to process a request.", e);
         }, true);
@@ -609,18 +623,54 @@ public class CurlRequest {
          */
         protected CurlResponse response = new CurlResponse();
 
+        /**
+         * The request-side encoding. Used as the fallback when the response declares no usable
+         * charset, and as the effective encoding when {@link #preferResponseCharset} is
+         * {@code false}. Immutable so the processor is safe to reuse.
+         */
+        private final String requestEncoding;
+
+        /**
+         * The effective encoding used to decode the response. Recomputed from
+         * {@link #requestEncoding} on every {@link #accept(HttpURLConnection)} call.
+         */
         private String encoding;
+
+        /**
+         * Whether the charset declared by the response {@code Content-Type} should be preferred
+         * over {@link #requestEncoding} when decoding the response body.
+         */
+        private final boolean preferResponseCharset;
 
         private int threshold;
 
         /**
-         * Constructs a new RequestProcessor with the specified encoding and threshold.
+         * Constructs a new RequestProcessor with the specified encoding and threshold. The charset
+         * declared by the response {@code Content-Type} is preferred over {@code encoding} when
+         * present and supported.
          *
          * @param encoding the character encoding
          * @param threshold the threshold size
          */
         public RequestProcessor(final String encoding, final int threshold) {
+            this(encoding, threshold, true);
+        }
+
+        /**
+         * Constructs a new RequestProcessor with the specified encoding, threshold and charset
+         * preference.
+         *
+         * @param encoding the request-side character encoding, used as the fallback (and as the
+         *            effective encoding when {@code preferResponseCharset} is {@code false})
+         * @param threshold the threshold size
+         * @param preferResponseCharset if {@code true}, the charset declared by the response
+         *            {@code Content-Type} is preferred when present and supported; if
+         *            {@code false}, {@code encoding} is always used
+         */
+        public RequestProcessor(final String encoding, final int threshold, final boolean preferResponseCharset) {
+            this.requestEncoding = encoding;
             this.encoding = encoding;
+            this.preferResponseCharset = preferResponseCharset;
             this.threshold = threshold;
         }
 
@@ -642,11 +692,11 @@ public class CurlRequest {
         public void accept(final HttpURLConnection con) {
             try {
                 // Prefer the charset declared by the response Content-Type; fall back to the
-                // request-side encoding when it is absent or unsupported.
-                final String responseCharset = parseCharset(con.getContentType());
-                if (responseCharset != null) {
-                    encoding = responseCharset;
-                }
+                // request-side encoding when it is absent, unsupported, or when the caller
+                // explicitly set an encoding (preferResponseCharset == false). Recomputed from
+                // requestEncoding each call so the processor is safe to reuse.
+                final String responseCharset = preferResponseCharset ? parseCharset(con.getContentType()) : null;
+                encoding = responseCharset != null ? responseCharset : requestEncoding;
                 response.setEncoding(encoding);
                 response.setHttpStatusCode(con.getResponseCode());
                 response.setHeaders(con.getHeaderFields());
@@ -705,11 +755,21 @@ public class CurlRequest {
                         }
                     }
                     if (charset.isEmpty()) {
+                        logger.fine(() -> "Ignoring empty response charset in Content-Type '" + contentType
+                                + "'; falling back to the request encoding.");
                         return null;
                     }
+                    final String candidate = charset;
                     try {
-                        return Charset.isSupported(charset) ? charset : null;
+                        if (Charset.isSupported(candidate)) {
+                            return candidate;
+                        }
+                        logger.fine(
+                                () -> "Ignoring unsupported response charset '" + candidate + "'; falling back to the request encoding.");
+                        return null;
                     } catch (final IllegalCharsetNameException e) {
+                        logger.fine(
+                                () -> "Ignoring illegal response charset name '" + candidate + "'; falling back to the request encoding.");
                         return null;
                     }
                 }

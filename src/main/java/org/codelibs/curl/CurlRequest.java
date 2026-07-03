@@ -471,6 +471,11 @@ public class CurlRequest {
      * {@code Authorization}, {@code Proxy-Authorization}, {@code Cookie} and {@code Set-Cookie}.
      * All other header values are returned unchanged.</p>
      *
+     * <p>Only header <em>values</em> are masked. Credentials carried elsewhere in the request are
+     * not masked and may still appear in {@code FINE} logs and in exception messages: query-string
+     * parameters (which are part of the request URL) and the request body are logged verbatim.
+     * Avoid placing secrets in the URL or body if log confidentiality is a concern.</p>
+     *
      * @param key the header name
      * @param value the header value
      * @return the masked value for sensitive headers, otherwise the original value
@@ -678,6 +683,9 @@ public class CurlRequest {
         /**
          * Parses the {@code charset} parameter from a response {@code Content-Type} header value.
          *
+         * <p>A charset value wrapped in a matching pair of double ({@code "}) or single ({@code '})
+         * quotes is unquoted before it is validated.</p>
+         *
          * @param contentType the {@code Content-Type} header value, may be {@code null}
          * @return the charset name if present and supported, otherwise {@code null}
          */
@@ -689,8 +697,12 @@ public class CurlRequest {
                 final String token = part.trim();
                 if (token.regionMatches(true, 0, "charset=", 0, 8)) {
                     String charset = token.substring(8).trim();
-                    if (charset.length() >= 2 && charset.charAt(0) == '"' && charset.charAt(charset.length() - 1) == '"') {
-                        charset = charset.substring(1, charset.length() - 1);
+                    if (charset.length() >= 2) {
+                        final char first = charset.charAt(0);
+                        final char last = charset.charAt(charset.length() - 1);
+                        if (first == last && (first == '"' || first == '\'')) {
+                            charset = charset.substring(1, charset.length() - 1);
+                        }
                     }
                     if (charset.isEmpty()) {
                         return null;

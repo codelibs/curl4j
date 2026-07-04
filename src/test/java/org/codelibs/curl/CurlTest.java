@@ -23,6 +23,7 @@ import static org.junit.Assert.fail;
 import java.io.File;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
+import java.net.ProtocolException;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -470,6 +471,40 @@ public class CurlTest {
         assertEquals(getViaFactory.method(), getViaConstructor.method());
         assertEquals(getViaFactory.encoding(), getViaConstructor.encoding());
         assertEquals(getViaFactory.threshold(), getViaConstructor.threshold());
+    }
+
+    // --- CONNECT method runtime behavior ---
+
+    @Test
+    public void testConnectMethodAlwaysFailsAtRuntime() {
+        // ## Arrange ##
+        // HttpURLConnection#setRequestMethod("CONNECT") always throws ProtocolException before any
+        // socket I/O, so "example.invalid" never needs to resolve: this is deterministic and does
+        // not touch the real network.
+        final CurlRequest request = Curl.connect("http://example.invalid/");
+
+        // ## Act & Assert ##
+        try {
+            request.execute();
+            fail("Expected CurlException");
+        } catch (CurlException e) {
+            assertTrue("expected a ProtocolException somewhere in the cause chain: " + e, causeChainContains(e, ProtocolException.class));
+        }
+    }
+
+    /**
+     * Walks the cause chain of {@code t} looking for an instance of {@code type}, without assuming
+     * how many levels of wrapping are involved.
+     */
+    private static boolean causeChainContains(final Throwable t, final Class<? extends Throwable> type) {
+        Throwable current = t;
+        while (current != null) {
+            if (type.isInstance(current)) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     /*

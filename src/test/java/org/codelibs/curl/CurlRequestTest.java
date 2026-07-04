@@ -16,6 +16,7 @@
 package org.codelibs.curl;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
@@ -27,8 +28,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.Proxy;
+import java.net.URL;
 import java.util.concurrent.ForkJoinPool;
 
+import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLSocketFactory;
 
 import org.codelibs.curl.Curl.Method;
@@ -828,5 +831,56 @@ public class CurlRequestTest {
     public void testMaskSensitiveHeaderWithNullKey() {
         // A null key is treated as non-sensitive
         assertEquals("value", CurlRequest.maskSensitiveHeader(null, "value"));
+    }
+
+    // --- isGzipEncoding tests ---
+
+    @Test
+    public void testIsGzipEncoding() {
+        // ## Arrange & Act & Assert ##
+        assertFalse(CurlRequest.isGzipEncoding(null));
+        assertTrue(CurlRequest.isGzipEncoding("gzip"));
+        assertTrue(CurlRequest.isGzipEncoding("GZIP"));
+        assertTrue(CurlRequest.isGzipEncoding("x-gzip"));
+        assertTrue(CurlRequest.isGzipEncoding("X-GZIP"));
+        assertTrue(CurlRequest.isGzipEncoding(" gzip "));
+        assertFalse(CurlRequest.isGzipEncoding("gzip, deflate"));
+        assertFalse(CurlRequest.isGzipEncoding("deflate"));
+        assertFalse(CurlRequest.isGzipEncoding(""));
+    }
+
+    // --- open(URL) wiring tests ---
+
+    @Test
+    public void testOpenAppliesSslSocketFactoryToHttpsConnection() throws Exception {
+        // ## Arrange ##
+        // openConnection() is lazy: no network I/O happens until connect()/getInputStream(), so
+        // this exercises the real open(URL) wiring without touching the network.
+        final CurlRequest request = new CurlRequest(Method.GET, "https://example.com/");
+        final SSLSocketFactory factory = (SSLSocketFactory) SSLSocketFactory.getDefault();
+        request.sslSocketFactory(factory);
+
+        // ## Act ##
+        final HttpURLConnection connection = request.open(new URL("https://example.com/"));
+
+        // ## Assert ##
+        assertTrue("expected an HttpsURLConnection: " + connection, connection instanceof HttpsURLConnection);
+        assertSame(factory, ((HttpsURLConnection) connection).getSSLSocketFactory());
+    }
+
+    @Test
+    public void testOpenReturnsHttpConnectionForNonHttpsUrlWithoutClassCastException() throws Exception {
+        // ## Arrange ##
+        // The sslSocketFactory instanceof-guard in open(URL) must not attempt to cast a plain
+        // HttpURLConnection to HttpsURLConnection.
+        final CurlRequest request = new CurlRequest(Method.GET, "http://example.com/");
+        request.sslSocketFactory((SSLSocketFactory) SSLSocketFactory.getDefault());
+
+        // ## Act ##
+        final HttpURLConnection connection = request.open(new URL("http://example.com/"));
+
+        // ## Assert ##
+        assertNotNull(connection);
+        assertFalse("plain http connection must not be an HttpsURLConnection", connection instanceof HttpsURLConnection);
     }
 }

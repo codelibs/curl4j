@@ -513,4 +513,22 @@ public class ContentCacheTest {
         // ## Assert ##
         assertTrue(cache.isInMemory());
     }
+
+    @Test
+    public void testGetContentAsBytesAfterCloseThrows() throws IOException {
+        // ## Arrange ##
+        tempFile = File.createTempFile("test", ".tmp", Curl.tmpDir);
+        Files.write(tempFile.toPath(), "Hello, World!".getBytes());
+
+        ContentCache cache = new ContentCache(tempFile);
+        cache.close(); // This deletes the file
+
+        // ## Act & Assert ##
+        try {
+            cache.getContentAsBytes();
+            fail("Expected IOException for deleted file");
+        } catch (IOException e) {
+            // Expected - file no longer exists
+        }
+    }
 }

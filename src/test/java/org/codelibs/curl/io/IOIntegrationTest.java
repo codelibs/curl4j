@@ -44,13 +44,19 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
 import java.util.logging.Logger;
 import java.util.zip.GZIPOutputStream;
+import java.util.zip.ZipException;
 
 import static org.codelibs.curl.io.ContentOutputStream.PREFIX;
 import static org.codelibs.curl.io.ContentOutputStream.SUFFIX;
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
@@ -432,6 +438,44 @@ public class IOIntegrationTest {
         protected HttpURLConnection open(final URL u) throws IOException {
             return connectionFactory.create(u);
         }
+
+        java.util.concurrent.ForkJoinPool currentThreadPool() {
+            return threadPool; // inherited protected field
+        }
+    }
+
+    // A CurlRequest built via the 1-arg constructor (url stays null) that records open() calls.
+    class NullUrlRecordingCurlRequest extends CurlRequest {
+        boolean openCalled = false;
+
+        NullUrlRecordingCurlRequest(Curl.Method method) {
+            super(method);
+        }
+
+        @Override
+        protected HttpURLConnection open(final URL u) throws IOException {
+            openCalled = true;
+            return new OutputCapturingMockHttpURLConnection(u, "ok");
+        }
+    }
+
+    @Test
+    public void test_AssemblyFailure_RoutedToExceptionListener() throws Exception {
+        // ## Arrange ##
+        // With a null url and params present, query-string assembly throws (NPE). Because assembly
+        // now runs inside the try block, the failure must be wrapped and routed to the exception
+        // listener instead of escaping raw, and open() must never be reached.
+        NullUrlRecordingCurlRequest req = new NullUrlRecordingCurlRequest(Curl.Method.GET);
+        req.param("k", "v");
+        final AtomicReference<Exception> captured = new AtomicReference<>();
+
+        // ## Act ##
+        req.execute(res -> fail("action listener must not be invoked"), captured::set);
+
+        // ## Assert ##
+        assertNotNull(captured.get());
+        assertTrue("expected CurlException, got " + captured.get(), captured.get() instanceof CurlException);
+        assertFalse("open() must not be called when assembly fails", req.openCalled);
     }
 
     @Test
@@ -575,7 +619,8 @@ public class IOIntegrationTest {
     @Test
     public void test_SuccessResponseWithBody_ReturnsBody() throws Exception {
         // ## Arrange ##
-        CurlRequest req = new MockCurlRequest(Curl.Method.GET, "http://dummy");
+        // Uses the open(URL) override so that execute() exercises the real connect() path.
+        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy", u -> new MockHttpURLConnection(u));
 
         // ## Act ##
         try (CurlResponse response = req.execute()) {
@@ -743,6 +788,299 @@ public class IOIntegrationTest {
         }
     }
 
+    /**
+     * Mock HttpURLConnection that returns GZIP-compressed content with a configurable
+     * Content-Encoding header value (e.g. "GZIP", "x-gzip").
+     */
+    class ConfigurableGzipMockHttpURLConnection extends HttpURLConnection {
+        private final byte[] gzippedData;
+        private final String contentEncoding;
+
+        ConfigurableGzipMockHttpURLConnection(URL u, String contentEncoding, byte[] gzippedData) {
+            super(u);
+            this.contentEncoding = contentEncoding;
+            this.gzippedData = gzippedData;
+        }
+
+        @Override
+        public void disconnect() {
+        }
+
+        @Override
+        public boolean usingProxy() {
+            return false;
+        }
+
+        @Override
+        public void connect() {
+        }
+
+        @Override
+        public int getResponseCode() {
+            return 200;
+        }
+
+        @Override
+        public String getContentEncoding() {
+            return contentEncoding;
+        }
+
+        @Override
+        public InputStream getInputStream() {
+            return new ByteArrayInputStream(gzippedData);
+        }
+
+        @Override
+        public Map<String, List<String>> getHeaderFields() {
+            return Collections.emptyMap();
+        }
+    }
+
+    @Test
+    public void test_GzipResponse_UppercaseEncoding_DecompressedCorrectly() throws Exception {
+        // ## Arrange ##
+        // "GZIP" (uppercase) must still be recognized as gzip.
+        String originalBody = "Hello, uppercase GZIP!";
+        byte[] gzipped = gzipCompress(originalBody);
+        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy",
+                u -> new ConfigurableGzipMockHttpURLConnection(u, "GZIP", gzipped));
+
+        // ## Act ##
+        try (CurlResponse response = req.execute()) {
+            // ## Assert ##
+            assertEquals(200, response.getHttpStatusCode());
+            assertEquals(originalBody, response.getContentAsString());
+        }
+    }
+
+    @Test
+    public void test_GzipResponse_XGzipEncoding_DecompressedCorrectly() throws Exception {
+        // ## Arrange ##
+        // "x-gzip" must also be recognized as gzip.
+        String originalBody = "Hello, x-gzip!";
+        byte[] gzipped = gzipCompress(originalBody);
+        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy",
+                u -> new ConfigurableGzipMockHttpURLConnection(u, "x-gzip", gzipped));
+
+        // ## Act ##
+        try (CurlResponse response = req.execute()) {
+            // ## Assert ##
+            assertEquals(200, response.getHttpStatusCode());
+            assertEquals(originalBody, response.getContentAsString());
+        }
+    }
+
+    @Test
+    public void test_GzipResponse_MixedCaseXGzipEncoding() throws Exception {
+        // ## Arrange ##
+        // "X-GZIP" (uppercase) must still be recognized as gzip.
+        String originalBody = "hello X-GZIP";
+        byte[] gzipped = gzipCompress(originalBody);
+        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy",
+                u -> new ConfigurableGzipMockHttpURLConnection(u, "X-GZIP", gzipped));
+
+        // ## Act ##
+        try (CurlResponse response = req.execute()) {
+            // ## Assert ##
+            assertEquals(200, response.getHttpStatusCode());
+            assertEquals(originalBody, response.getContentAsString());
+        }
+    }
+
+    // --- Response Content-Type charset tests ---
+
+    /**
+     * Mock HttpURLConnection that declares a charset in its Content-Type and returns a body
+     * encoded with that charset.
+     */
+    class ContentTypeCharsetMockHttpURLConnection extends HttpURLConnection {
+        private final String contentType;
+        private final byte[] body;
+
+        ContentTypeCharsetMockHttpURLConnection(URL u, String contentType, byte[] body) {
+            super(u);
+            this.contentType = contentType;
+            this.body = body;
+        }
+
+        @Override
+        public void disconnect() {
+        }
+
+        @Override
+        public boolean usingProxy() {
+            return false;
+        }
+
+        @Override
+        public void connect() {
+        }
+
+        @Override
+        public int getResponseCode() {
+            return 200;
+        }
+
+        @Override
+        public String getContentType() {
+            return contentType;
+        }
+
+        @Override
+        public InputStream getInputStream() {
+            return new ByteArrayInputStream(body);
+        }
+
+        @Override
+        public Map<String, List<String>> getHeaderFields() {
+            return Collections.emptyMap();
+        }
+    }
+
+    @Test
+    public void test_ResponseContentTypeCharset_UsedForDecoding() throws Exception {
+        // ## Arrange ##
+        // The request-side encoding stays at the default UTF-8; only the response Content-Type
+        // declares Shift_JIS. Decoding must honor the response charset without the caller
+        // calling encoding().
+        String text = "こんにちは世界";
+        byte[] shiftJisBytes = text.getBytes("Shift_JIS");
+        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy",
+                u -> new ContentTypeCharsetMockHttpURLConnection(u, "text/html; charset=Shift_JIS", shiftJisBytes));
+
+        // ## Act ##
+        try (CurlResponse response = req.execute()) {
+            // ## Assert ##
+            assertEquals("Shift_JIS", response.getEncoding());
+            assertEquals(text, response.getContentAsString());
+        }
+    }
+
+    @Test
+    public void test_ResponseWithoutContentTypeCharset_FallsBackToRequestEncoding() throws Exception {
+        // ## Arrange ##
+        // No charset in Content-Type: decoding falls back to the request-side encoding (UTF-8).
+        String text = "plain ascii body";
+        byte[] utf8Bytes = text.getBytes(StandardCharsets.UTF_8);
+        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy",
+                u -> new ContentTypeCharsetMockHttpURLConnection(u, "text/plain", utf8Bytes));
+
+        // ## Act ##
+        try (CurlResponse response = req.execute()) {
+            // ## Assert ##
+            assertEquals("UTF-8", response.getEncoding());
+            assertEquals(text, response.getContentAsString());
+        }
+    }
+
+    @Test
+    public void test_ResponseContentTypeCharset_DoubleQuoted_UsedForDecoding() throws Exception {
+        // ## Arrange ##
+        // A charset wrapped in double quotes must be unquoted and used for decoding.
+        String text = "こんにちは世界";
+        byte[] shiftJisBytes = text.getBytes("Shift_JIS");
+        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy",
+                u -> new ContentTypeCharsetMockHttpURLConnection(u, "text/html; charset=\"Shift_JIS\"", shiftJisBytes));
+
+        // ## Act ##
+        try (CurlResponse response = req.execute()) {
+            // ## Assert ##
+            assertEquals("Shift_JIS", response.getEncoding());
+            assertEquals(text, response.getContentAsString());
+        }
+    }
+
+    @Test
+    public void test_ResponseContentTypeCharset_SingleQuoted_UsedForDecoding() throws Exception {
+        // ## Arrange ##
+        // A charset wrapped in single quotes must be unquoted and used for decoding.
+        String text = "こんにちは世界";
+        byte[] shiftJisBytes = text.getBytes("Shift_JIS");
+        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy",
+                u -> new ContentTypeCharsetMockHttpURLConnection(u, "text/html; charset='Shift_JIS'", shiftJisBytes));
+
+        // ## Act ##
+        try (CurlResponse response = req.execute()) {
+            // ## Assert ##
+            assertEquals("Shift_JIS", response.getEncoding());
+            assertEquals(text, response.getContentAsString());
+        }
+    }
+
+    @Test
+    public void test_ResponseContentTypeCharset_UnsupportedCharset_FallsBackToRequestEncoding() throws Exception {
+        // ## Arrange ##
+        // An unsupported (but syntactically legal) charset must fall back to the request encoding
+        // without throwing.
+        String text = "hello";
+        byte[] utf8Bytes = text.getBytes(StandardCharsets.UTF_8);
+        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy",
+                u -> new ContentTypeCharsetMockHttpURLConnection(u, "text/plain; charset=NO-SUCH-CHARSET", utf8Bytes));
+
+        // ## Act ##
+        try (CurlResponse response = req.execute()) {
+            // ## Assert ##
+            assertEquals("UTF-8", response.getEncoding());
+            assertEquals(text, response.getContentAsString());
+        }
+    }
+
+    @Test
+    public void test_ResponseContentTypeCharset_IllegalCharsetName_FallsBackToRequestEncoding() throws Exception {
+        // ## Arrange ##
+        // An illegal charset name must be caught and fall back to the request encoding without
+        // throwing.
+        String text = "hello";
+        byte[] utf8Bytes = text.getBytes(StandardCharsets.UTF_8);
+        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy",
+                u -> new ContentTypeCharsetMockHttpURLConnection(u, "text/plain; charset=@illegal@", utf8Bytes));
+
+        // ## Act ##
+        try (CurlResponse response = req.execute()) {
+            // ## Assert ##
+            assertEquals("UTF-8", response.getEncoding());
+            assertEquals(text, response.getContentAsString());
+        }
+    }
+
+    @Test
+    public void test_ExplicitRequestEncoding_TakesPrecedenceOverResponseCharset() throws Exception {
+        // ## Arrange ##
+        // The caller explicitly set the encoding via encoding("Shift_JIS"). Even though the server
+        // declares a different charset (UTF-8), the caller's explicit choice must win so a
+        // mis-declaring server can still be overridden. The body is Shift_JIS-encoded.
+        String text = "こんにちは世界";
+        byte[] shiftJisBytes = text.getBytes("Shift_JIS");
+        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy",
+                u -> new ContentTypeCharsetMockHttpURLConnection(u, "text/html; charset=UTF-8", shiftJisBytes));
+        req.encoding("Shift_JIS");
+
+        // ## Act ##
+        try (CurlResponse response = req.execute()) {
+            // ## Assert ##
+            assertEquals("Shift_JIS", response.getEncoding());
+            assertEquals(text, response.getContentAsString());
+        }
+    }
+
+    @Test
+    public void test_ResponseContentTypeCharset_WithTrailingParameter_UsedForDecoding() throws Exception {
+        // ## Arrange ##
+        // charset is not the last parameter; the trailing "; boundary=xyz" must not be glued onto
+        // the charset value (guards against a naive indexOf-based parser).
+        String text = "こんにちは世界";
+        byte[] shiftJisBytes = text.getBytes("Shift_JIS");
+        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy",
+                u -> new ContentTypeCharsetMockHttpURLConnection(u, "text/html; charset=Shift_JIS; boundary=xyz", shiftJisBytes));
+
+        // ## Act ##
+        try (CurlResponse response = req.execute()) {
+            // ## Assert ##
+            assertEquals("Shift_JIS", response.getEncoding());
+            assertEquals(text, response.getContentAsString());
+        }
+    }
+
     // --- InputStream body writing test ---
 
     /**
@@ -887,33 +1225,35 @@ public class IOIntegrationTest {
     }
 
     @Test
-    public void test_SynchronousExecute_RestoresThreadPool() throws Exception {
+    public void test_SynchronousExecute_DoesNotMutateThreadPoolField() throws Exception {
         // ## Arrange ##
-        CurlRequest req =
-                new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy", u -> new OutputCapturingMockHttpURLConnection(u, "ok"));
+        // execute() must run synchronously on the calling thread WITHOUT transiently nulling the
+        // shared threadPool field. (The old save/restore approach nulled it and was not thread-safe.)
         ForkJoinPool pool = new ForkJoinPool(1);
-        req.threadPool(pool);
+        try {
+            final OpenOverrideCurlRequest[] holder = new OpenOverrideCurlRequest[1];
+            final AtomicReference<ForkJoinPool> fieldDuringExec = new AtomicReference<>();
+            final AtomicReference<String> execThread = new AtomicReference<>();
+            holder[0] = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy", u -> {
+                fieldDuringExec.set(holder[0].currentThreadPool());
+                execThread.set(Thread.currentThread().getName());
+                return new OutputCapturingMockHttpURLConnection(u, "ok");
+            });
+            holder[0].threadPool(pool);
 
-        // ## Act ##
-        // execute() should force synchronous execution but restore threadPool afterward
-        try (CurlResponse response = req.execute()) {
-            assertEquals(200, response.getHttpStatusCode());
+            // ## Act ##
+            try (CurlResponse response = holder[0].execute()) {
+                assertEquals(200, response.getHttpStatusCode());
+            }
+
+            // ## Assert ##
+            // The field must NOT have been nulled during synchronous execution...
+            assertSame(pool, fieldDuringExec.get());
+            // ...and execution ran on the calling thread, not a pool thread.
+            assertEquals(Thread.currentThread().getName(), execThread.get());
+        } finally {
+            pool.shutdown();
         }
-
-        // ## Assert ##
-        // After execute(), the threadPool should be restored
-        // We verify by running async execute which should use the pool
-        CountDownLatch latch = new CountDownLatch(1);
-        AtomicReference<String> threadName = new AtomicReference<>();
-        CurlRequest req2 =
-                new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy", u -> new OutputCapturingMockHttpURLConnection(u, "ok"));
-        req2.threadPool(pool);
-        req2.execute(response -> {
-            threadName.set(Thread.currentThread().getName());
-            latch.countDown();
-        }, e -> latch.countDown());
-        assertTrue(latch.await(5, TimeUnit.SECONDS));
-        pool.shutdown();
     }
 
     // --- execute(Consumer, Consumer) tests ---
@@ -1029,6 +1369,47 @@ public class IOIntegrationTest {
             String urlStr = capturedUrl.get().toString();
             assertTrue("URL should start with existing params: " + urlStr, urlStr.contains("?existing=true"));
             assertTrue("Additional param should use &: " + urlStr, urlStr.contains("&key1=value1"));
+        }
+    }
+
+    @Test
+    public void test_ParamsAppendedToUrlWithTrailingQuestionMark() throws Exception {
+        // ## Arrange ##
+        // A URL that already ends with '?' must not gain an extra '&' before the first param.
+        final AtomicReference<URL> capturedUrl = new AtomicReference<>();
+        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://example.com/path?", u -> {
+            capturedUrl.set(u);
+            return new UrlRecordingMockHttpURLConnection(u);
+        });
+        req.param("key", "value").param("key2", "value2");
+
+        // ## Act ##
+        try (CurlResponse response = req.execute()) {
+            // ## Assert ##
+            String urlStr = capturedUrl.get().toString();
+            assertTrue("First param should follow '?' directly: " + urlStr, urlStr.contains("path?key=value"));
+            assertTrue("Second param should use '&': " + urlStr, urlStr.contains("&key2=value2"));
+            assertTrue("URL should not contain '?&': " + urlStr, !urlStr.contains("?&"));
+        }
+    }
+
+    @Test
+    public void test_ParamsAppendedToUrlWithTrailingAmpersand() throws Exception {
+        // ## Arrange ##
+        // A URL that already ends with '&' must not gain an extra '&' before the first param.
+        final AtomicReference<URL> capturedUrl = new AtomicReference<>();
+        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://example.com/path?a=b&", u -> {
+            capturedUrl.set(u);
+            return new UrlRecordingMockHttpURLConnection(u);
+        });
+        req.param("key", "value");
+
+        // ## Act ##
+        try (CurlResponse response = req.execute()) {
+            // ## Assert ##
+            String urlStr = capturedUrl.get().toString();
+            assertTrue("First param should follow trailing '&' directly: " + urlStr, urlStr.contains("a=b&key=value"));
+            assertTrue("URL should not contain '&&': " + urlStr, !urlStr.contains("&&"));
         }
     }
 
@@ -1280,6 +1661,109 @@ public class IOIntegrationTest {
         }
     }
 
+    // --- Sensitive-header masking in the FINE log path ---
+
+    // Records request properties set on the connection so the sent (unmasked) value can be asserted.
+    class RequestPropertyRecordingMockHttpURLConnection extends HttpURLConnection {
+        final Map<String, String> props = new HashMap<>();
+
+        RequestPropertyRecordingMockHttpURLConnection(URL u) {
+            super(u);
+        }
+
+        @Override
+        public void addRequestProperty(String key, String value) {
+            props.put(key, value);
+        }
+
+        @Override
+        public void setRequestProperty(String key, String value) {
+            props.put(key, value);
+        }
+
+        @Override
+        public void disconnect() {
+        }
+
+        @Override
+        public boolean usingProxy() {
+            return false;
+        }
+
+        @Override
+        public void connect() {
+        }
+
+        @Override
+        public int getResponseCode() {
+            return 200;
+        }
+
+        @Override
+        public InputStream getInputStream() {
+            return new ByteArrayInputStream("ok".getBytes(StandardCharsets.UTF_8));
+        }
+
+        @Override
+        public Map<String, List<String>> getHeaderFields() {
+            return Collections.emptyMap();
+        }
+    }
+
+    @Test
+    public void test_SensitiveHeaderMaskedInFineLog_ButSentUnmasked() throws Exception {
+        // ## Arrange ##
+        final String token = "Bearer SECRET-TOKEN-VALUE";
+        final Logger curlLogger = Logger.getLogger(CurlRequest.class.getName());
+        final Level originalLevel = curlLogger.getLevel();
+        final boolean originalUseParent = curlLogger.getUseParentHandlers();
+        final List<String> records = Collections.synchronizedList(new ArrayList<>());
+        final Handler handler = new Handler() {
+            @Override
+            public void publish(LogRecord r) {
+                records.add(r.getMessage());
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        handler.setLevel(Level.FINE);
+        curlLogger.setLevel(Level.FINE);
+        curlLogger.setUseParentHandlers(false);
+        curlLogger.addHandler(handler);
+        final RequestPropertyRecordingMockHttpURLConnection[] mock = new RequestPropertyRecordingMockHttpURLConnection[1];
+        try {
+            CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy", u -> {
+                mock[0] = new RequestPropertyRecordingMockHttpURLConnection(u);
+                return mock[0];
+            });
+            req.header("Authorization", token);
+
+            // ## Act ##
+            try (CurlResponse response = req.execute()) {
+                assertEquals(200, response.getHttpStatusCode());
+            }
+
+            // ## Assert ##
+            // The FINE log masks the credential...
+            boolean sawMaskedAuth = records.stream().anyMatch(m -> m != null && m.contains("Authorization=***"));
+            boolean leakedToken = records.stream().anyMatch(m -> m != null && m.contains("SECRET-TOKEN-VALUE"));
+            assertTrue("expected a masked Authorization line in FINE log; got: " + records, sawMaskedAuth);
+            assertFalse("credential must not appear in any log record; got: " + records, leakedToken);
+            // ...but the real value is still sent on the wire.
+            assertEquals(token, mock[0].props.get("Authorization"));
+        } finally {
+            curlLogger.removeHandler(handler);
+            curlLogger.setLevel(originalLevel);
+            curlLogger.setUseParentHandlers(originalUseParent);
+        }
+    }
+
     // --- connectionBuilder callback verification ---
 
     @Test
@@ -1319,6 +1803,238 @@ public class IOIntegrationTest {
             // ## Assert ##
             assertEquals(originalUrl, capturedUrl.get().toString());
         }
+    }
+
+    // --- Cause-chain walking helper (loose assertions, no hard-coded wrapping depth) ---
+
+    /**
+     * Walks the cause chain of {@code t} looking for an instance of {@code type}, without assuming
+     * how many levels of wrapping are involved.
+     */
+    private static boolean causeChainContains(final Throwable t, final Class<? extends Throwable> type) {
+        Throwable current = t;
+        while (current != null) {
+            if (type.isInstance(current)) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    // --- Malformed gzip body ---
+
+    @Test
+    public void test_MalformedGzipBody_SurfacedAsCurlException() throws Exception {
+        // ## Arrange ##
+        // Content-Encoding declares gzip, but the body is not actually gzipped. GZIPInputStream
+        // reads (and validates) the header eagerly, so this fails while writing the response.
+        byte[] notGzip = "not gzip".getBytes(StandardCharsets.UTF_8);
+        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy",
+                u -> new ConfigurableGzipMockHttpURLConnection(u, "gzip", notGzip));
+
+        // ## Act & Assert ##
+        try {
+            req.execute();
+            fail("Expected CurlException");
+        } catch (CurlException e) {
+            assertTrue("expected a ZipException somewhere in the cause chain: " + e, causeChainContains(e, ZipException.class));
+        }
+    }
+
+    // --- getResponseCode() throwing IOException (malformed status line) ---
+
+    /**
+     * Mock HttpURLConnection whose getResponseCode() throws, simulating a malformed status line.
+     */
+    class ResponseCodeThrowingMockHttpURLConnection extends HttpURLConnection {
+        ResponseCodeThrowingMockHttpURLConnection(URL u) {
+            super(u);
+        }
+
+        @Override
+        public void disconnect() {
+        }
+
+        @Override
+        public boolean usingProxy() {
+            return false;
+        }
+
+        @Override
+        public void connect() {
+        }
+
+        @Override
+        public int getResponseCode() throws IOException {
+            throw new IOException("simulated malformed status line");
+        }
+
+        @Override
+        public Map<String, List<String>> getHeaderFields() {
+            return Collections.emptyMap();
+        }
+    }
+
+    @Test
+    public void test_ResponseCodeIOException_SurfacedAsCurlException() throws Exception {
+        // ## Arrange ##
+        CurlRequest req =
+                new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy", u -> new ResponseCodeThrowingMockHttpURLConnection(u));
+        AtomicReference<Exception> captured = new AtomicReference<>();
+
+        // ## Act ##
+        req.execute(res -> fail("action listener must not be invoked"), captured::set);
+
+        // ## Assert ##
+        assertNotNull(captured.get());
+        assertTrue("expected CurlException, got " + captured.get(), captured.get() instanceof CurlException);
+        assertTrue("expected the simulated IOException somewhere in the cause chain: " + captured.get(),
+                causeChainContains(captured.get(), IOException.class));
+    }
+
+    // --- Empty URL with params (query-assembly separator logic) ---
+
+    @Test
+    public void test_EmptyUrlWithParams_SurfacedAsCurlException() throws Exception {
+        // ## Arrange ##
+        // An empty url with params exercises the url.isEmpty() branch of the separator logic in
+        // CurlRequest#connect(); it must fail at "new URL(...)" (MalformedURLException) rather than
+        // an IndexOutOfBoundsException from charAt() on an empty string.
+        CurlRequest req = Curl.get("").param("k", "v");
+
+        // ## Act & Assert ##
+        try {
+            req.execute();
+            fail("Expected CurlException");
+        } catch (CurlException e) {
+            assertTrue("expected a MalformedURLException somewhere in the cause chain: " + e,
+                    causeChainContains(e, MalformedURLException.class));
+        }
+    }
+
+    // --- Response Content-Type charset edge cases (empty / quoted-empty / whitespace) ---
+
+    @Test
+    public void test_ResponseContentTypeCharset_EmptyValue_FallsBackToRequestEncoding() throws Exception {
+        // ## Arrange ##
+        // "charset=" with nothing after it must be treated as absent and fall back to the
+        // request-side encoding (default UTF-8).
+        String text = "plain utf8 body";
+        byte[] utf8Bytes = text.getBytes(StandardCharsets.UTF_8);
+        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy",
+                u -> new ContentTypeCharsetMockHttpURLConnection(u, "text/plain; charset=", utf8Bytes));
+
+        // ## Act ##
+        try (CurlResponse response = req.execute()) {
+            // ## Assert ##
+            assertEquals("UTF-8", response.getEncoding());
+            assertEquals(text, response.getContentAsString());
+        }
+    }
+
+    @Test
+    public void test_ResponseContentTypeCharset_EmptyQuotedValue_FallsBackToRequestEncoding() throws Exception {
+        // ## Arrange ##
+        // charset="" (empty once quotes are stripped) must also fall back to the request-side
+        // encoding; this exercises the isEmpty() check AFTER quote-stripping.
+        String text = "plain utf8 body";
+        byte[] utf8Bytes = text.getBytes(StandardCharsets.UTF_8);
+        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy",
+                u -> new ContentTypeCharsetMockHttpURLConnection(u, "text/plain; charset=\"\"", utf8Bytes));
+
+        // ## Act ##
+        try (CurlResponse response = req.execute()) {
+            // ## Assert ##
+            assertEquals("UTF-8", response.getEncoding());
+            assertEquals(text, response.getContentAsString());
+        }
+    }
+
+    @Test
+    public void test_ResponseContentTypeCharset_WhitespaceAfterEquals_UsedForDecoding() throws Exception {
+        // ## Arrange ##
+        // A space between "=" and the charset value must be trimmed away and the value still
+        // honored for decoding.
+        String text = "こんにちは世界";
+        byte[] shiftJisBytes = text.getBytes("Shift_JIS");
+        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy",
+                u -> new ContentTypeCharsetMockHttpURLConnection(u, "text/html; charset= Shift_JIS", shiftJisBytes));
+
+        // ## Act ##
+        try (CurlResponse response = req.execute()) {
+            // ## Assert ##
+            assertEquals("Shift_JIS", response.getEncoding());
+            assertEquals(text, response.getContentAsString());
+        }
+    }
+
+    // --- No Accept-Encoding header when compression is not configured ---
+
+    @Test
+    public void test_NoAcceptEncodingHeaderWhenCompressionNotSet() throws Exception {
+        // ## Arrange ##
+        final HeaderRecordingMockHttpURLConnection[] mockHolder = new HeaderRecordingMockHttpURLConnection[1];
+        CurlRequest req = new OpenOverrideCurlRequest(Curl.Method.GET, "http://dummy", u -> {
+            HeaderRecordingMockHttpURLConnection mock = new HeaderRecordingMockHttpURLConnection(u);
+            mockHolder[0] = mock;
+            return mock;
+        });
+        // Neither gzip() nor compression(...) is configured.
+
+        // ## Act ##
+        try (CurlResponse response = req.execute()) {
+            // ## Assert ##
+            Map<String, List<String>> props = mockHolder[0].getRecordedRequestProperties();
+            assertFalse("Accept-Encoding header should not be set: " + props, props.containsKey("Accept-Encoding"));
+        }
+    }
+
+    // --- RequestProcessor reuse and constructor behavior ---
+
+    @Test
+    public void test_RequestProcessorReuse_RecomputesEncoding() throws Exception {
+        // ## Arrange ##
+        // Pins the "safe to reuse" javadoc contract: a single RequestProcessor instance must
+        // recompute its effective encoding on every accept() call rather than sticking to whatever
+        // the first response declared.
+        CurlRequest.RequestProcessor processor = new CurlRequest.RequestProcessor("UTF-8", 1024 * 1024);
+        String shiftJisText = "こんにちは世界";
+        byte[] shiftJisBytes = shiftJisText.getBytes("Shift_JIS");
+        ContentTypeCharsetMockHttpURLConnection con1 =
+                new ContentTypeCharsetMockHttpURLConnection(new URL("http://dummy"), "text/html; charset=Shift_JIS", shiftJisBytes);
+        String plainText = "plain ascii body";
+        byte[] utf8Bytes = plainText.getBytes(StandardCharsets.UTF_8);
+        ContentTypeCharsetMockHttpURLConnection con2 =
+                new ContentTypeCharsetMockHttpURLConnection(new URL("http://dummy"), "text/plain", utf8Bytes);
+
+        // ## Act ##
+        processor.accept(con1);
+        String firstEncoding = processor.getResponse().getEncoding();
+
+        processor.accept(con2);
+        String secondEncoding = processor.getResponse().getEncoding();
+
+        // ## Assert ##
+        assertEquals("Shift_JIS", firstEncoding);
+        assertEquals("UTF-8", secondEncoding);
+    }
+
+    @Test
+    public void test_RequestProcessorTwoArgConstructor_PrefersResponseCharset() throws Exception {
+        // ## Arrange ##
+        // The 2-arg constructor defaults preferResponseCharset to true.
+        CurlRequest.RequestProcessor processor = new CurlRequest.RequestProcessor("UTF-8", 1024 * 1024);
+        String text = "こんにちは世界";
+        byte[] shiftJisBytes = text.getBytes("Shift_JIS");
+        ContentTypeCharsetMockHttpURLConnection con =
+                new ContentTypeCharsetMockHttpURLConnection(new URL("http://dummy"), "text/html; charset=Shift_JIS", shiftJisBytes);
+
+        // ## Act ##
+        processor.accept(con);
+
+        // ## Assert ##
+        assertEquals("Shift_JIS", processor.getResponse().getEncoding());
     }
 
     // --- Helper: MockConnectionFactory ---

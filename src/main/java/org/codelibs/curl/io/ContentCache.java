@@ -132,10 +132,18 @@ public class ContentCache implements Closeable {
         return Files.readAllBytes(file.toPath());
     }
 
+    /**
+     * Closes this cache. If the content is cached in a file, the file is deleted.
+     *
+     * <p>This method is idempotent: closing a file-based cache whose file has already been
+     * removed (for example by a previous {@code close()}) completes silently without error.</p>
+     *
+     * @throws IOException if an I/O error occurs while deleting the file
+     */
     @Override
     public void close() throws IOException {
         if (file != null) {
-            Files.delete(file.toPath());
+            Files.deleteIfExists(file.toPath());
         }
     }
 

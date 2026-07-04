@@ -27,8 +27,11 @@ import java.net.HttpURLConnection;
 import java.net.Proxy;
 import java.net.URL;
 import java.net.URLEncoder;
+import java.nio.charset.Charset;
+import java.nio.charset.IllegalCharsetNameException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.concurrent.ForkJoinPool;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
@@ -74,6 +77,14 @@ public class CurlRequest {
      * The character encoding for the request.
      */
     protected String encoding = "UTF-8";
+
+    /**
+     * Whether {@link #encoding(String)} was explicitly called by the caller. When {@code true},
+     * the caller-supplied encoding takes precedence over any charset declared in the response
+     * {@code Content-Type}; when {@code false} (the default), the response charset is preferred
+     * and the request encoding is only used as a fallback.
+     */
+    protected boolean encodingSet = false;
 
     /**
      * The threshold size for the request body.
@@ -153,10 +164,13 @@ public class CurlRequest {
      *
      * @param method the HTTP method
      * @param url the URL
-     * @throws IllegalArgumentException if method is null
+     * @throws IllegalArgumentException if method or url is null
      */
     public CurlRequest(final Method method, final String url) {
         this(method);
+        if (url == null) {
+            throw new IllegalArgumentException("url must not be null");
+        }
         this.url = url;
     }
 
@@ -219,6 +233,11 @@ public class CurlRequest {
     /**
      * Sets the character encoding for the request.
      *
+     * <p>Calling this method also marks the encoding as explicitly chosen: the response body is
+     * then decoded with this encoding even when the response {@code Content-Type} declares a
+     * different charset. When this method is not called, the default request encoding is only a
+     * fallback and the charset declared by the response takes precedence.</p>
+     *
      * @param encoding the encoding
      * @return this CurlRequest instance
      * @throws CurlException if the method is called after the param method
@@ -228,6 +247,7 @@ public class CurlRequest {
             throw new CurlException("This method must be called before param method.");
         }
         this.encoding = encoding;
+        this.encodingSet = true;
         return this;
     }
 
@@ -281,7 +301,7 @@ public class CurlRequest {
      * @throws CurlException if the body method is already called
      */
     public CurlRequest body(final String body) {
-        if (bodyStream != null) {
+        if (this.body != null || bodyStream != null) {
             throw new CurlException("body method is already called.");
         }
         this.body = body;
@@ -296,7 +316,7 @@ public class CurlRequest {
      * @throws CurlException if the body method is already called
      */
     public CurlRequest body(final InputStream stream) {
-        if (body != null) {
+        if (body != null || bodyStream != null) {
             throw new CurlException("body method is already called.");
         }
         this.bodyStream = stream;
@@ -350,33 +370,57 @@ public class CurlRequest {
     /**
      * Connects to the URL and executes the request.
      *
+     * <p>If a thread pool has been configured via {@link #threadPool(ForkJoinPool)}, the request
+     * runs asynchronously on that pool; otherwise it runs synchronously on the calling thread.</p>
+     *
      * @param actionListener the action listener for handling the response
      * @param exceptionListener the exception listener for handling exceptions
      */
     public void connect(final Consumer<HttpURLConnection> actionListener, final Consumer<Exception> exceptionListener) {
-        final Runnable task = () -> {
-            final String finalUrl;
-            if (paramList != null) {
-                char sp;
-                if (url.indexOf('?') == -1) {
-                    sp = '?';
-                } else {
-                    sp = '&';
-                }
-                final StringBuilder urlBuf = new StringBuilder(100);
-                for (final String param : paramList) {
-                    urlBuf.append(sp).append(param);
-                    if (sp == '?') {
-                        sp = '&';
-                    }
-                }
-                finalUrl = url + urlBuf.toString();
-            } else {
-                finalUrl = url;
-            }
+        connect(actionListener, exceptionListener, false);
+    }
 
+    /**
+     * Connects to the URL and executes the request, optionally forcing synchronous execution.
+     *
+     * @param actionListener the action listener for handling the response
+     * @param exceptionListener the exception listener for handling exceptions
+     * @param forceSync if {@code true}, the request always runs synchronously on the calling
+     *            thread even when a thread pool has been configured; if {@code false}, the
+     *            configured thread pool is used when present
+     */
+    private void connect(final Consumer<HttpURLConnection> actionListener, final Consumer<Exception> exceptionListener,
+            final boolean forceSync) {
+        final Runnable task = () -> {
+            String targetUrl = url;
             HttpURLConnection connection = null;
             try {
+                final String finalUrl;
+                if (paramList != null) {
+                    final StringBuilder urlBuf = new StringBuilder(100);
+                    char sp;
+                    final char lastChar = url.isEmpty() ? '\0' : url.charAt(url.length() - 1);
+                    if (lastChar == '?' || lastChar == '&') {
+                        // The URL already ends with a separator, so the first parameter needs none.
+                        sp = '\0';
+                    } else if (url.indexOf('?') == -1) {
+                        sp = '?';
+                    } else {
+                        sp = '&';
+                    }
+                    for (final String param : paramList) {
+                        if (sp != '\0') {
+                            urlBuf.append(sp);
+                        }
+                        urlBuf.append(param);
+                        sp = '&';
+                    }
+                    finalUrl = url + urlBuf.toString();
+                } else {
+                    finalUrl = url;
+                }
+                targetUrl = finalUrl;
+
                 logger.fine(() -> ">>> " + method + " " + finalUrl);
                 @SuppressWarnings("deprecation")
                 final URL u = new URL(finalUrl);
@@ -390,7 +434,7 @@ public class CurlRequest {
                 }
                 if (headerList != null) {
                     for (final String[] values : headerList) {
-                        logger.fine(() -> ">>> " + values[0] + "=" + values[1]);
+                        logger.fine(() -> ">>> " + values[0] + "=" + maskSensitiveHeader(values[0], values[1]));
                         connection.addRequestProperty(values[0], values[1]);
                     }
                 }
@@ -420,18 +464,66 @@ public class CurlRequest {
 
                 actionListener.accept(connection);
             } catch (final Exception e) {
-                exceptionListener.accept(new CurlException("Failed to access to " + finalUrl, e));
+                exceptionListener.accept(new CurlException("Failed to access to " + targetUrl, e));
             } finally {
                 if (connection != null) {
                     connection.disconnect();
                 }
             }
         };
-        if (threadPool != null) {
+        if (!forceSync && threadPool != null) {
             threadPool.execute(task);
         } else {
             task.run();
         }
+    }
+
+    /**
+     * Masks the value of sensitive request headers so that credentials are not written to logs.
+     *
+     * <p>The value is replaced with {@code ***} for the following header names (case-insensitive):
+     * {@code Authorization}, {@code Proxy-Authorization}, {@code Cookie} and {@code Set-Cookie}.
+     * All other header values are returned unchanged.</p>
+     *
+     * <p>Only header <em>values</em> are masked. Credentials carried elsewhere in the request are
+     * not masked and may still appear in {@code FINE} logs and in exception messages: query-string
+     * parameters (which are part of the request URL) and the request body are logged verbatim.
+     * Avoid placing secrets in the URL or body if log confidentiality is a concern.</p>
+     *
+     * @param key the header name
+     * @param value the header value
+     * @return the masked value for sensitive headers, otherwise the original value
+     */
+    protected static String maskSensitiveHeader(final String key, final String value) {
+        if (key != null) {
+            switch (key.toLowerCase(Locale.ROOT)) {
+            case "authorization":
+            case "proxy-authorization":
+            case "cookie":
+            case "set-cookie":
+                return "***";
+            default:
+                break;
+            }
+        }
+        return value;
+    }
+
+    /**
+     * Determines whether the given content encoding denotes GZIP compression.
+     *
+     * <p>Both {@code gzip} and {@code x-gzip} are recognized, case-insensitively and ignoring
+     * surrounding whitespace.</p>
+     *
+     * @param encoding the content encoding value, may be {@code null}
+     * @return {@code true} if the encoding denotes GZIP, otherwise {@code false}
+     */
+    protected static boolean isGzipEncoding(final String encoding) {
+        if (encoding == null) {
+            return false;
+        }
+        final String trimmed = encoding.trim();
+        return GZIP.equalsIgnoreCase(trimmed) || "x-gzip".equalsIgnoreCase(trimmed);
     }
 
     /**
@@ -457,7 +549,7 @@ public class CurlRequest {
      */
     public void execute(final Consumer<CurlResponse> actionListener, final Consumer<Exception> exceptionListener) {
         connect(con -> {
-            final RequestProcessor processor = new RequestProcessor(encoding, threshold);
+            final RequestProcessor processor = new RequestProcessor(encoding, threshold, !encodingSet);
             processor.accept(con);
             try (final CurlResponse res = processor.getResponse()) {
                 actionListener.accept(res);
@@ -473,17 +565,11 @@ public class CurlRequest {
      * @return the CurlResponse
      */
     public CurlResponse execute() {
-        final ForkJoinPool originalThreadPool = this.threadPool;
-        try {
-            this.threadPool = null;
-            final RequestProcessor processor = new RequestProcessor(encoding, threshold);
-            connect(processor, e -> {
-                throw new CurlException("Failed to process a request.", e);
-            });
-            return processor.getResponse();
-        } finally {
-            this.threadPool = originalThreadPool;
-        }
+        final RequestProcessor processor = new RequestProcessor(encoding, threshold, !encodingSet);
+        connect(processor, e -> {
+            throw new CurlException("Failed to process a request.", e);
+        }, true);
+        return processor.getResponse();
     }
 
     /**
@@ -515,6 +601,9 @@ public class CurlRequest {
     /**
      * Sets the connection and read timeouts for the request.
      *
+     * <p>When {@code timeout()} is not called, the JDK defaults apply ({@code 0}, meaning no
+     * timeout), so a request may block indefinitely while connecting or reading.</p>
+     *
      * @param connectTimeout the connection timeout in milliseconds
      * @param readTimeout the read timeout in milliseconds
      * @return this CurlRequest instance
@@ -534,18 +623,54 @@ public class CurlRequest {
          */
         protected CurlResponse response = new CurlResponse();
 
-        private final String encoding;
+        /**
+         * The request-side encoding. Used as the fallback when the response declares no usable
+         * charset, and as the effective encoding when {@link #preferResponseCharset} is
+         * {@code false}. Immutable so the processor is safe to reuse.
+         */
+        private final String requestEncoding;
+
+        /**
+         * The effective encoding used to decode the response. Recomputed from
+         * {@link #requestEncoding} on every {@link #accept(HttpURLConnection)} call.
+         */
+        private String encoding;
+
+        /**
+         * Whether the charset declared by the response {@code Content-Type} should be preferred
+         * over {@link #requestEncoding} when decoding the response body.
+         */
+        private final boolean preferResponseCharset;
 
         private int threshold;
 
         /**
-         * Constructs a new RequestProcessor with the specified encoding and threshold.
+         * Constructs a new RequestProcessor with the specified encoding and threshold. The charset
+         * declared by the response {@code Content-Type} is preferred over {@code encoding} when
+         * present and supported.
          *
          * @param encoding the character encoding
          * @param threshold the threshold size
          */
         public RequestProcessor(final String encoding, final int threshold) {
+            this(encoding, threshold, true);
+        }
+
+        /**
+         * Constructs a new RequestProcessor with the specified encoding, threshold and charset
+         * preference.
+         *
+         * @param encoding the request-side character encoding, used as the fallback (and as the
+         *            effective encoding when {@code preferResponseCharset} is {@code false})
+         * @param threshold the threshold size
+         * @param preferResponseCharset if {@code true}, the charset declared by the response
+         *            {@code Content-Type} is preferred when present and supported; if
+         *            {@code false}, {@code encoding} is always used
+         */
+        public RequestProcessor(final String encoding, final int threshold, final boolean preferResponseCharset) {
+            this.requestEncoding = encoding;
             this.encoding = encoding;
+            this.preferResponseCharset = preferResponseCharset;
             this.threshold = threshold;
         }
 
@@ -566,6 +691,12 @@ public class CurlRequest {
         @Override
         public void accept(final HttpURLConnection con) {
             try {
+                // Prefer the charset declared by the response Content-Type; fall back to the
+                // request-side encoding when it is absent, unsupported, or when the caller
+                // explicitly set an encoding (preferResponseCharset == false). Recomputed from
+                // requestEncoding each call so the processor is safe to reuse.
+                final String responseCharset = preferResponseCharset ? parseCharset(con.getContentType()) : null;
+                encoding = responseCharset != null ? responseCharset : requestEncoding;
                 response.setEncoding(encoding);
                 response.setHttpStatusCode(con.getResponseCode());
                 response.setHeaders(con.getHeaderFields());
@@ -577,7 +708,7 @@ public class CurlRequest {
                     if (Method.HEAD.toString().equalsIgnoreCase(con.getRequestMethod())) {
                         return new ByteArrayInputStream(new byte[0]);
                     } else if (con.getResponseCode() < 400) {
-                        if (GZIP.equals(con.getContentEncoding())) {
+                        if (isGzipEncoding(con.getContentEncoding())) {
                             return new GZIPInputStream(con.getInputStream());
                         } else {
                             return con.getInputStream();
@@ -587,7 +718,7 @@ public class CurlRequest {
                         if (errorStream == null) {
                             return new ByteArrayInputStream(new byte[0]);
                         }
-                        if (GZIP.equals(con.getContentEncoding())) {
+                        if (isGzipEncoding(con.getContentEncoding())) {
                             return new GZIPInputStream(errorStream);
                         } else {
                             return errorStream;
@@ -597,6 +728,53 @@ public class CurlRequest {
                     throw new CurlException("Failed to process a request.", e);
                 }
             });
+        }
+
+        /**
+         * Parses the {@code charset} parameter from a response {@code Content-Type} header value.
+         *
+         * <p>A charset value wrapped in a matching pair of double ({@code "}) or single ({@code '})
+         * quotes is unquoted before it is validated.</p>
+         *
+         * @param contentType the {@code Content-Type} header value, may be {@code null}
+         * @return the charset name if present and supported, otherwise {@code null}
+         */
+        private static String parseCharset(final String contentType) {
+            if (contentType == null) {
+                return null;
+            }
+            for (final String part : contentType.split(";")) {
+                final String token = part.trim();
+                if (token.regionMatches(true, 0, "charset=", 0, 8)) {
+                    String charset = token.substring(8).trim();
+                    if (charset.length() >= 2) {
+                        final char first = charset.charAt(0);
+                        final char last = charset.charAt(charset.length() - 1);
+                        if (first == last && (first == '"' || first == '\'')) {
+                            charset = charset.substring(1, charset.length() - 1);
+                        }
+                    }
+                    if (charset.isEmpty()) {
+                        logger.fine(() -> "Ignoring empty response charset in Content-Type '" + contentType
+                                + "'; falling back to the request encoding.");
+                        return null;
+                    }
+                    final String candidate = charset;
+                    try {
+                        if (Charset.isSupported(candidate)) {
+                            return candidate;
+                        }
+                        logger.fine(
+                                () -> "Ignoring unsupported response charset '" + candidate + "'; falling back to the request encoding.");
+                        return null;
+                    } catch (final IllegalCharsetNameException e) {
+                        logger.fine(
+                                () -> "Ignoring illegal response charset name '" + candidate + "'; falling back to the request encoding.");
+                        return null;
+                    }
+                }
+            }
+            return null;
         }
 
         /**

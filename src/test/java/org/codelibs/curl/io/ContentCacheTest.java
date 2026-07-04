@@ -283,19 +283,32 @@ public class ContentCacheTest {
     }
 
     @Test
-    public void testFileBasedCacheCloseNonExistentFile() {
+    public void testFileBasedCacheCloseNonExistentFile() throws IOException {
         tempFile = new File(Curl.tmpDir, "non-existent-file.tmp");
         assertFalse(tempFile.exists());
 
         ContentCache cache = new ContentCache(tempFile);
 
-        // Should throw IOException when file doesn't exist
-        try {
-            cache.close();
-            fail("Expected IOException for non-existent file");
-        } catch (IOException e) {
-            // Expected - file doesn't exist
-        }
+        // close() is idempotent: a missing file must not cause an exception
+        cache.close();
+        assertFalse(tempFile.exists());
+    }
+
+    @Test
+    public void testFileBasedCacheDoubleClose() throws IOException {
+        tempFile = File.createTempFile("test", ".tmp", Curl.tmpDir);
+        Files.write(tempFile.toPath(), "Hello, World!".getBytes());
+        assertTrue(tempFile.exists());
+
+        ContentCache cache = new ContentCache(tempFile);
+
+        // First close deletes the file
+        cache.close();
+        assertFalse(tempFile.exists());
+
+        // Second close must not throw even though the file is already gone
+        cache.close();
+        assertFalse(tempFile.exists());
     }
 
     @Test
@@ -499,5 +512,23 @@ public class ContentCacheTest {
 
         // ## Assert ##
         assertTrue(cache.isInMemory());
+    }
+
+    @Test
+    public void testGetContentAsBytesAfterCloseThrows() throws IOException {
+        // ## Arrange ##
+        tempFile = File.createTempFile("test", ".tmp", Curl.tmpDir);
+        Files.write(tempFile.toPath(), "Hello, World!".getBytes());
+
+        ContentCache cache = new ContentCache(tempFile);
+        cache.close(); // This deletes the file
+
+        // ## Act & Assert ##
+        try {
+            cache.getContentAsBytes();
+            fail("Expected IOException for deleted file");
+        } catch (IOException e) {
+            // Expected - file no longer exists
+        }
     }
 }

@@ -16,6 +16,7 @@
 package org.codelibs.curl;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
@@ -27,8 +28,10 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.Proxy;
+import java.net.URL;
 import java.util.concurrent.ForkJoinPool;
 
+import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLSocketFactory;
 
 import org.codelibs.curl.Curl.Method;
@@ -54,14 +57,13 @@ public class CurlRequestTest {
 
     @Test
     public void testConstructorWithNullUrl() {
-        // URL can be null with the two-argument constructor
-        CurlRequest request = new CurlRequest(Method.DELETE, null);
-
-        assertEquals(Method.DELETE, request.method());
-        assertEquals("UTF-8", request.encoding());
-        assertEquals(1024 * 1024, request.threshold());
-        assertNull(request.proxy());
-        assertNull(request.body());
+        // URL must not be null with the two-argument constructor
+        try {
+            new CurlRequest(Method.DELETE, null);
+            fail("Expected IllegalArgumentException");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("url must not be null"));
+        }
     }
 
     @Test
@@ -216,6 +218,32 @@ public class CurlRequestTest {
         try {
             InputStream stream = new ByteArrayInputStream("test data".getBytes());
             request.body(stream);
+            fail("Expected CurlException");
+        } catch (CurlException e) {
+            assertTrue(e.getMessage().contains("body method is already called"));
+        }
+    }
+
+    @Test
+    public void testBodyStringCalledTwiceThrowsException() {
+        CurlRequest request = new CurlRequest(Method.POST, "https://example.com");
+        request.body("first body");
+
+        try {
+            request.body("second body");
+            fail("Expected CurlException");
+        } catch (CurlException e) {
+            assertTrue(e.getMessage().contains("body method is already called"));
+        }
+    }
+
+    @Test
+    public void testBodyStreamCalledTwiceThrowsException() {
+        CurlRequest request = new CurlRequest(Method.POST, "https://example.com");
+        request.body(new ByteArrayInputStream("first".getBytes()));
+
+        try {
+            request.body(new ByteArrayInputStream("second".getBytes()));
             fail("Expected CurlException");
         } catch (CurlException e) {
             assertTrue(e.getMessage().contains("body method is already called"));
@@ -778,5 +806,81 @@ public class CurlRequestTest {
         // ## Assert ##
         assertEquals(3000, request.connectTimeout);
         assertEquals(4000, request.readTimeout);
+    }
+
+    // --- maskSensitiveHeader tests ---
+
+    @Test
+    public void testMaskSensitiveHeaderMasksSensitiveKeys() {
+        // Sensitive header values are masked, case-insensitively by header name
+        assertEquals("***", CurlRequest.maskSensitiveHeader("Authorization", "Bearer secret-token"));
+        assertEquals("***", CurlRequest.maskSensitiveHeader("authorization", "Basic abc123"));
+        assertEquals("***", CurlRequest.maskSensitiveHeader("Proxy-Authorization", "Basic xyz"));
+        assertEquals("***", CurlRequest.maskSensitiveHeader("Cookie", "session=abc"));
+        assertEquals("***", CurlRequest.maskSensitiveHeader("SET-COOKIE", "session=abc"));
+    }
+
+    @Test
+    public void testMaskSensitiveHeaderKeepsNonSensitiveKeys() {
+        // Non-sensitive header values are returned unchanged
+        assertEquals("application/json", CurlRequest.maskSensitiveHeader("Content-Type", "application/json"));
+        assertEquals("custom-value", CurlRequest.maskSensitiveHeader("X-Custom-Header", "custom-value"));
+    }
+
+    @Test
+    public void testMaskSensitiveHeaderWithNullKey() {
+        // A null key is treated as non-sensitive
+        assertEquals("value", CurlRequest.maskSensitiveHeader(null, "value"));
+    }
+
+    // --- isGzipEncoding tests ---
+
+    @Test
+    public void testIsGzipEncoding() {
+        // ## Arrange & Act & Assert ##
+        assertFalse(CurlRequest.isGzipEncoding(null));
+        assertTrue(CurlRequest.isGzipEncoding("gzip"));
+        assertTrue(CurlRequest.isGzipEncoding("GZIP"));
+        assertTrue(CurlRequest.isGzipEncoding("x-gzip"));
+        assertTrue(CurlRequest.isGzipEncoding("X-GZIP"));
+        assertTrue(CurlRequest.isGzipEncoding(" gzip "));
+        assertFalse(CurlRequest.isGzipEncoding("gzip, deflate"));
+        assertFalse(CurlRequest.isGzipEncoding("deflate"));
+        assertFalse(CurlRequest.isGzipEncoding(""));
+    }
+
+    // --- open(URL) wiring tests ---
+
+    @Test
+    public void testOpenAppliesSslSocketFactoryToHttpsConnection() throws Exception {
+        // ## Arrange ##
+        // openConnection() is lazy: no network I/O happens until connect()/getInputStream(), so
+        // this exercises the real open(URL) wiring without touching the network.
+        final CurlRequest request = new CurlRequest(Method.GET, "https://example.com/");
+        final SSLSocketFactory factory = (SSLSocketFactory) SSLSocketFactory.getDefault();
+        request.sslSocketFactory(factory);
+
+        // ## Act ##
+        final HttpURLConnection connection = request.open(new URL("https://example.com/"));
+
+        // ## Assert ##
+        assertTrue("expected an HttpsURLConnection: " + connection, connection instanceof HttpsURLConnection);
+        assertSame(factory, ((HttpsURLConnection) connection).getSSLSocketFactory());
+    }
+
+    @Test
+    public void testOpenReturnsHttpConnectionForNonHttpsUrlWithoutClassCastException() throws Exception {
+        // ## Arrange ##
+        // The sslSocketFactory instanceof-guard in open(URL) must not attempt to cast a plain
+        // HttpURLConnection to HttpsURLConnection.
+        final CurlRequest request = new CurlRequest(Method.GET, "http://example.com/");
+        request.sslSocketFactory((SSLSocketFactory) SSLSocketFactory.getDefault());
+
+        // ## Act ##
+        final HttpURLConnection connection = request.open(new URL("http://example.com/"));
+
+        // ## Assert ##
+        assertNotNull(connection);
+        assertFalse("plain http connection must not be an HttpsURLConnection", connection instanceof HttpsURLConnection);
     }
 }

@@ -460,11 +460,11 @@ public class IOIntegrationTest {
     }
 
     @Test
-    public void test_AssemblyFailure_RoutedToExceptionListener() throws Exception {
+    public void test_NullUrl_RoutedToExceptionListener() throws Exception {
         // ## Arrange ##
-        // With a null url and params present, query-string assembly throws (NPE). Because assembly
-        // now runs inside the try block, the failure must be wrapped and routed to the exception
-        // listener instead of escaping raw, and open() must never be reached.
+        // A request executed while its url is still null must fail fast: the null url is detected
+        // before any query-string assembly or connection work, so the failure is routed to the
+        // exception listener as a clear IllegalArgumentException and open() is never reached.
         NullUrlRecordingCurlRequest req = new NullUrlRecordingCurlRequest(Curl.Method.GET);
         req.param("k", "v");
         final AtomicReference<Exception> captured = new AtomicReference<>();
@@ -474,8 +474,9 @@ public class IOIntegrationTest {
 
         // ## Assert ##
         assertNotNull(captured.get());
-        assertTrue("expected CurlException, got " + captured.get(), captured.get() instanceof CurlException);
-        assertFalse("open() must not be called when assembly fails", req.openCalled);
+        assertTrue("expected IllegalArgumentException, got " + captured.get(), captured.get() instanceof IllegalArgumentException);
+        assertTrue(captured.get().getMessage().contains("url must not be null"));
+        assertFalse("open() must not be called when the url is null", req.openCalled);
     }
 
     @Test

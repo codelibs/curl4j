@@ -30,6 +30,7 @@ import java.net.HttpURLConnection;
 import java.net.Proxy;
 import java.net.URL;
 import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.atomic.AtomicReference;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLSocketFactory;
@@ -57,13 +58,24 @@ public class CurlRequestTest {
 
     @Test
     public void testConstructorWithNullUrl() {
-        // URL must not be null with the two-argument constructor
-        try {
-            new CurlRequest(Method.DELETE, null);
-            fail("Expected IllegalArgumentException");
-        } catch (IllegalArgumentException e) {
-            assertTrue(e.getMessage().contains("url must not be null"));
-        }
+        // The two-argument constructor accepts a null URL so that the URL can be resolved lazily
+        // before the request is executed (e.g. subclasses that select a target node at runtime).
+        CurlRequest request = new CurlRequest(Method.DELETE, null);
+
+        assertEquals(Method.DELETE, request.method());
+    }
+
+    @Test
+    public void testConnectWithNullUrlReportsError() {
+        // A request whose URL was never resolved must fail with a clear error when executed,
+        // rather than surfacing a low-level NullPointerException.
+        CurlRequest request = new CurlRequest(Method.GET, null);
+        AtomicReference<Exception> error = new AtomicReference<>();
+
+        request.connect(con -> fail("Should not connect when the URL is null"), error::set);
+
+        assertNotNull(error.get());
+        assertTrue(error.get().getMessage().contains("url must not be null"));
     }
 
     @Test

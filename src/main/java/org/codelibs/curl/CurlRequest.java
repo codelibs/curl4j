@@ -162,15 +162,17 @@ public class CurlRequest {
     /**
      * Constructs a new CurlRequest with the specified HTTP method and URL.
      *
+     * <p>The URL may be {@code null} at construction time so that it can be resolved lazily
+     * before the request is executed (for example by subclasses that select a target node at
+     * runtime). A request whose URL is still {@code null} when it is executed fails with an
+     * {@link IllegalArgumentException} reported through the exception listener.</p>
+     *
      * @param method the HTTP method
-     * @param url the URL
-     * @throws IllegalArgumentException if method or url is null
+     * @param url the URL, or {@code null} to resolve it later
+     * @throws IllegalArgumentException if method is null
      */
     public CurlRequest(final Method method, final String url) {
         this(method);
-        if (url == null) {
-            throw new IllegalArgumentException("url must not be null");
-        }
         this.url = url;
     }
 
@@ -373,6 +375,9 @@ public class CurlRequest {
      * <p>If a thread pool has been configured via {@link #threadPool(ForkJoinPool)}, the request
      * runs asynchronously on that pool; otherwise it runs synchronously on the calling thread.</p>
      *
+     * <p>If the request URL is {@code null}, an {@link IllegalArgumentException} is reported to the
+     * exception listener instead of attempting a connection.</p>
+     *
      * @param actionListener the action listener for handling the response
      * @param exceptionListener the exception listener for handling exceptions
      */
@@ -392,6 +397,10 @@ public class CurlRequest {
     private void connect(final Consumer<HttpURLConnection> actionListener, final Consumer<Exception> exceptionListener,
             final boolean forceSync) {
         final Runnable task = () -> {
+            if (url == null) {
+                exceptionListener.accept(new IllegalArgumentException("url must not be null"));
+                return;
+            }
             String targetUrl = url;
             HttpURLConnection connection = null;
             try {

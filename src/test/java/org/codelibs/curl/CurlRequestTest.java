@@ -26,17 +26,29 @@ import static org.junit.Assert.fail;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.Proxy;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 
 import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLSocketFactory;
 
 import org.codelibs.curl.Curl.Method;
 import org.junit.Test;
+
+import com.sun.net.httpserver.HttpServer;
 
 /**
  * Test class for CurlRequest.
@@ -830,6 +842,68 @@ public class CurlRequestTest {
         assertEquals("***", CurlRequest.maskSensitiveHeader("Proxy-Authorization", "Basic xyz"));
         assertEquals("***", CurlRequest.maskSensitiveHeader("Cookie", "session=abc"));
         assertEquals("***", CurlRequest.maskSensitiveHeader("SET-COOKIE", "session=abc"));
+    }
+
+    @Test
+    public void testMaskSensitiveHeaderMasksCustomCredentialHeaders() {
+        // Service-specific API key / token headers are masked as well
+        assertEquals("***", CurlRequest.maskSensitiveHeader("Backlog-API-Key", "secret-api-key"));
+        assertEquals("***", CurlRequest.maskSensitiveHeader("X-Api-Key", "secret-api-key"));
+        assertEquals("***", CurlRequest.maskSensitiveHeader("X-Auth-Token", "secret-token"));
+        assertEquals("***", CurlRequest.maskSensitiveHeader("X-Amz-Security-Token", "secret-token"));
+        assertEquals("***", CurlRequest.maskSensitiveHeader("X-Client-Secret", "secret"));
+        assertEquals("***", CurlRequest.maskSensitiveHeader("X-Password", "secret"));
+    }
+
+    @Test
+    public void testExecuteDoesNotLogCredentialHeaderValues() throws Exception {
+        // Regression test: a custom API key header must not reach the FINE log of a real request
+        final String apiKey = "dummy-api-key-value-0001";
+        final HttpServer server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
+        server.createContext("/", exchange -> {
+            final byte[] body = "ok".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            try (OutputStream out = exchange.getResponseBody()) {
+                out.write(body);
+            }
+        });
+        server.start();
+
+        final List<String> messages = new CopyOnWriteArrayList<>();
+        final Handler handler = new Handler() {
+            @Override
+            public void publish(final LogRecord record) {
+                messages.add(record.getMessage());
+            }
+
+            @Override
+            public void flush() {
+            }
+
+            @Override
+            public void close() {
+            }
+        };
+        handler.setLevel(Level.ALL);
+        final Logger julLogger = CurlRequest.logger;
+        final Level oldLevel = julLogger.getLevel();
+        julLogger.setLevel(Level.FINE);
+        julLogger.addHandler(handler);
+        try (CurlResponse response = Curl.get("http://127.0.0.1:" + server.getAddress().getPort() + "/api")
+                .header("Backlog-API-Key", apiKey).header("X-Request-Id", "visible-id").execute()) {
+            assertEquals(200, response.getHttpStatusCode());
+        } finally {
+            julLogger.removeHandler(handler);
+            julLogger.setLevel(oldLevel);
+            server.stop(0);
+        }
+
+        // The header is logged (so the masking is actually exercised) but its value is not
+        assertTrue(messages.toString(), messages.contains(">>> Backlog-API-Key=***"));
+        assertTrue(messages.toString(), messages.contains(">>> X-Request-Id=visible-id"));
+        for (final String message : messages) {
+            assertFalse(message, message.contains(apiKey));
+        }
     }
 
     @Test

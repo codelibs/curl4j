@@ -64,6 +64,12 @@ public class CurlRequest {
     protected static final Logger logger = Logger.getLogger(CurlRequest.class.getName());
 
     /**
+     * Fragments of request header names whose values are masked in log output.
+     */
+    private static final String[] SENSITIVE_HEADER_FRAGMENTS =
+            { "authorization", "cookie", "token", "secret", "password", "credential", "key" };
+
+    /**
      * The URL for the HTTP request.
      */
     protected String url;
@@ -490,9 +496,12 @@ public class CurlRequest {
     /**
      * Masks the value of sensitive request headers so that credentials are not written to logs.
      *
-     * <p>The value is replaced with {@code ***} for the following header names (case-insensitive):
-     * {@code Authorization}, {@code Proxy-Authorization}, {@code Cookie} and {@code Set-Cookie}.
-     * All other header values are returned unchanged.</p>
+     * <p>The value is replaced with {@code ***} when the header name (case-insensitive) contains
+     * one of {@code authorization}, {@code cookie}, {@code token}, {@code secret}, {@code password},
+     * {@code credential} or {@code key}. This covers the standard headers ({@code Authorization},
+     * {@code Proxy-Authorization}, {@code Cookie}, {@code Set-Cookie}) and the custom API-key and
+     * token headers that services define, such as {@code X-Api-Key}, {@code Backlog-API-Key} or
+     * {@code X-Auth-Token}. All other header values are returned unchanged.</p>
      *
      * <p>Only header <em>values</em> are masked. Credentials carried elsewhere in the request are
      * not masked and may still appear in {@code FINE} logs and in exception messages: query-string
@@ -505,14 +514,11 @@ public class CurlRequest {
      */
     protected static String maskSensitiveHeader(final String key, final String value) {
         if (key != null) {
-            switch (key.toLowerCase(Locale.ROOT)) {
-            case "authorization":
-            case "proxy-authorization":
-            case "cookie":
-            case "set-cookie":
-                return "***";
-            default:
-                break;
+            final String name = key.toLowerCase(Locale.ROOT);
+            for (final String fragment : SENSITIVE_HEADER_FRAGMENTS) {
+                if (name.contains(fragment)) {
+                    return "***";
+                }
             }
         }
         return value;
